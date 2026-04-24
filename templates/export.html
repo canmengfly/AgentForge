@@ -1,0 +1,852 @@
+{% extends "base.html" %}
+{% block title %}Agent 集成{% endblock %}
+{% block page_title %}Agent 集成{% endblock %}
+{% block page_subtitle %}MCP 服务配置、接口测试与 Skill 文件生成{% endblock %}
+
+{% block content %}
+<style>
+/* ── shared ── */
+.exp-label { font-size:12.5px;font-weight:600;color:#374151;margin-bottom:5px;display:block; }
+.exp-hint  { font-size:11.5px;color:#94a3b8;margin:4px 0 0; }
+.exp-hint code { font-family:ui-monospace,monospace;font-size:11px;color:#444; }
+.copy-btn {
+  background:none;border:1px solid #e2e8f0;border-radius:6px;
+  padding:3px 10px;cursor:pointer;font-size:12px;color:#444;
+  transition:background .1s;white-space:nowrap;
+}
+.copy-btn:hover { background:#f5f5f5; }
+.copy-btn:disabled { opacity:.4;cursor:not-allowed; }
+.code-pre {
+  background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;
+  padding:0.8rem 1rem;font-family:ui-monospace,monospace;
+  font-size:12px;color:#334155;line-height:1.65;
+  white-space:pre;overflow-x:auto;margin:0;
+}
+/* ── test tool badge ── */
+.tool-tab {
+  padding:5px 12px;border-radius:6px;font-size:12.5px;cursor:pointer;
+  border:1px solid #e2e8f0;background:#fff;color:#475569;
+  transition:border-color .1s,background .1s,color .1s;white-space:nowrap;
+}
+.tool-tab:hover { border-color:#888;color:#111; }
+.tool-tab.active { border-color:#111;background:#f0f0f0;color:#111;font-weight:600; }
+/* ── skill preview ── */
+.skill-preview {
+  background:#0f172a;border-radius:10px;padding:1rem 1.25rem;
+  font-family:ui-monospace,monospace;font-size:12px;color:#cbd5e1;
+  line-height:1.75;white-space:pre-wrap;word-break:break-word;
+  flex:1;overflow-y:auto;
+}
+/* ── preset chips ── */
+.preset-chip {
+  padding:4px 10px;border-radius:20px;font-size:12px;cursor:pointer;
+  border:1px solid #e2e8f0;background:#fff;color:#475569;
+  transition:border-color .1s,background .1s,color .1s;
+}
+.preset-chip:hover { border-color:#111;color:#111;background:#f5f5f5; }
+/* ── result panel ── */
+.result-ok   { border-left:3px solid #22c55e; }
+.result-err  { border-left:3px solid #ef4444; }
+.result-pre  {
+  background:#0f172a;border-radius:8px;padding:0.85rem 1rem;
+  font-family:ui-monospace,monospace;font-size:12px;color:#e2e8f0;
+  line-height:1.65;white-space:pre-wrap;word-break:break-word;
+  max-height:320px;overflow-y:auto;margin:0;
+}
+</style>
+
+<div x-data="exportHub()" x-init="init()">
+
+  <!-- ══ 令牌管理 ═════════════════════════════════════════════════════ -->
+  <div class="card-panel" style="margin-bottom:1.25rem;">
+    <div class="card-panel-head">
+      <div>
+        <p style="font-size:14.5px;font-weight:700;color:#0f172a;margin:0;">令牌管理</p>
+        <p style="font-size:12px;color:#64748b;margin:2px 0 0;">创建持久化 API Token，或获取临时令牌用于接口测试</p>
+      </div>
+      <button type="button" @click="showCreateToken=true"
+              x-show="!showCreateToken"
+              class="button is-small is-primary" style="font-weight:600;">
+        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" style="margin-right:5px;"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+        新建 API Token
+      </button>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 340px;gap:0;">
+
+      <!-- Left: API Token list -->
+      <div style="padding:1.25rem;border-right:1px solid #f1f5f9;">
+
+        <!-- Create form -->
+        <div x-show="showCreateToken" x-cloak
+             style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:9px;
+                    padding:0.9rem 1rem;margin-bottom:1rem;
+                    display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+          <svg width="14" height="14" fill="none" stroke="#555" stroke-width="2" viewBox="0 0 24 24" style="flex-shrink:0;"><path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+          <input class="input is-small" type="text" x-model="newTokenName"
+                 placeholder="Token 名称，如：my-agent"
+                 @keydown.enter="createToken()"
+                 style="flex:1;min-width:180px;" />
+          <div style="display:flex;gap:6px;flex-shrink:0;">
+            <button type="button" class="button is-small is-primary"
+                    :class="tokenCreating?'is-loading':''"
+                    :disabled="!newTokenName.trim()||tokenCreating"
+                    @click="createToken()" style="font-weight:600;">创建</button>
+            <button type="button" @click="showCreateToken=false;newTokenName=''"
+                    style="background:none;border:1px solid #e2e8f0;border-radius:6px;
+                           padding:4px 10px;cursor:pointer;font-size:12px;color:#64748b;">取消</button>
+          </div>
+        </div>
+
+        <!-- One-time reveal -->
+        <div x-show="createdToken" x-cloak
+             style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;
+                    padding:1rem 1.1rem;margin-bottom:1rem;">
+          <div style="display:flex;align-items:center;gap:7px;margin-bottom:0.6rem;">
+            <svg width="13" height="13" fill="none" stroke="#16a34a" stroke-width="2.5" viewBox="0 0 24 24" style="flex-shrink:0;"><path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+            <span style="font-size:13px;font-weight:700;color:#15803d;">Token 已生成 — 请立即复制，关闭后无法再次查看</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:7px;margin-bottom:0.6rem;">
+            <code style="flex:1;font-family:ui-monospace,monospace;font-size:11.5px;
+                         background:#dcfce7;border:1px solid #bbf7d0;border-radius:6px;
+                         padding:5px 9px;word-break:break-all;color:#166534;line-height:1.6;"
+                  x-text="createdToken && createdToken.token"></code>
+            <button type="button" @click="copyText(createdToken.token)" class="copy-btn" style="flex-shrink:0;">复制</button>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
+            <span style="font-size:12px;color:#64748b;">前缀：<code style="font-family:ui-monospace,monospace;font-size:11px;color:#374151;" x-text="createdToken && createdToken.prefix + '…'"></code></span>
+            <div style="display:flex;gap:6px;">
+              <button type="button"
+                      @click="token=createdToken.token;createdToken=null"
+                      class="button is-small is-success" style="font-weight:600;font-size:12px;">激活用于测试</button>
+              <button type="button" @click="createdToken=null"
+                      style="background:none;border:1px solid #86efac;border-radius:6px;
+                             padding:3px 10px;cursor:pointer;font-size:12px;color:#16a34a;">仅关闭</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Loading -->
+        <div x-show="tokensLoading" style="text-align:center;color:#94a3b8;font-size:13px;padding:1.5rem 0;">加载中…</div>
+
+        <!-- Empty -->
+        <div x-show="!tokensLoading && tokens.length === 0 && !showCreateToken"
+             style="text-align:center;padding:1.5rem 0;color:#94a3b8;font-size:13px;">
+          <svg width="28" height="28" fill="none" stroke="#cbd5e1" stroke-width="1.3" viewBox="0 0 24 24" style="margin:0 auto 0.4rem;display:block;">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
+          </svg>
+          暂无 API Token，点击右上角「新建」创建
+        </div>
+
+        <!-- Token list -->
+        <template x-if="!tokensLoading && tokens.length > 0">
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead>
+              <tr style="border-bottom:2px solid #f1f5f9;">
+                <th style="padding:5px 8px;text-align:left;font-size:12px;color:#94a3b8;font-weight:600;">名称</th>
+                <th style="padding:5px 8px;text-align:left;font-size:12px;color:#94a3b8;font-weight:600;">前缀</th>
+                <th style="padding:5px 8px;text-align:left;font-size:12px;color:#94a3b8;font-weight:600;">创建</th>
+                <th style="padding:5px 8px;text-align:left;font-size:12px;color:#94a3b8;font-weight:600;">最后使用</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="t in tokens" :key="t.id">
+                <tr style="border-bottom:1px solid #f8fafc;">
+                  <td style="padding:8px 8px;font-weight:500;color:#1e293b;" x-text="t.name"></td>
+                  <td style="padding:8px 8px;">
+                    <code style="font-family:ui-monospace,monospace;font-size:11px;
+                                 background:#f1f5f9;border-radius:4px;padding:2px 6px;color:#475569;"
+                          x-text="t.prefix + '…'"></code>
+                  </td>
+                  <td style="padding:8px 8px;color:#64748b;font-size:12px;"
+                      x-text="new Date(t.created_at).toLocaleDateString('zh-CN',{month:'2-digit',day:'2-digit'})"></td>
+                  <td style="padding:8px 8px;color:#94a3b8;font-size:12px;"
+                      x-text="t.last_used_at ? new Date(t.last_used_at).toLocaleDateString('zh-CN',{month:'2-digit',day:'2-digit'}) : '从未'"></td>
+                  <td style="padding:8px 8px;text-align:right;">
+                    <button type="button" @click="deleteToken(t.id)"
+                            style="background:none;border:1px solid #fca5a5;border-radius:6px;
+                                   padding:2px 8px;cursor:pointer;font-size:12px;color:#ef4444;
+                                   transition:background .1s;"
+                            onmouseover="this.style.background='#fef2f2'"
+                            onmouseout="this.style.background='none'">删除</button>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </template>
+      </div>
+
+      <!-- Right: Active token for page testing -->
+      <div style="padding:1.25rem;display:flex;flex-direction:column;gap:0.85rem;">
+        <span class="exp-label" style="margin:0;">当前激活令牌</span>
+
+        <!-- Token active -->
+        <div x-show="token" x-cloak
+             style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:0.85rem 1rem;">
+          <div style="display:flex;align-items:center;gap:7px;margin-bottom:8px;">
+            <svg width="13" height="13" fill="none" stroke="#16a34a" stroke-width="2.5" viewBox="0 0 24 24" style="flex-shrink:0;">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+            </svg>
+            <span style="font-size:13px;font-weight:600;color:#15803d;">已激活</span>
+            <button type="button" @click="token=''"
+                    style="margin-left:auto;background:none;border:1px solid #fca5a5;border-radius:5px;
+                           padding:2px 8px;cursor:pointer;font-size:11.5px;color:#ef4444;
+                           transition:background .1s;"
+                    onmouseover="this.style.background='#fef2f2'"
+                    onmouseout="this.style.background='none'">清除</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <code style="flex:1;font-family:ui-monospace,monospace;font-size:11px;color:#374151;
+                         background:#dcfce7;border-radius:5px;padding:4px 8px;
+                         overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+                  x-text="token.slice(0,38)+'…'"></code>
+            <button type="button" @click="copyText(token)" class="copy-btn" style="flex-shrink:0;">复制</button>
+          </div>
+        </div>
+
+        <!-- No token: paste + password -->
+        <div x-show="!token" style="display:flex;flex-direction:column;gap:0.75rem;">
+          <label class="exp-label" style="margin-bottom:5px;">粘贴 API Token</label>
+          <div style="display:flex;gap:6px;">
+            <input class="input is-small" type="text" x-model="pasteToken"
+                   placeholder="aft_…"
+                   @keydown.enter="pasteToken.trim() && (token=pasteToken.trim(),pasteToken='')"
+                   style="flex:1;font-family:ui-monospace,monospace;font-size:12px;" />
+            <button type="button" class="button is-small is-primary"
+                    :disabled="!pasteToken.trim()"
+                    @click="token=pasteToken.trim();pasteToken=''"
+                    style="font-weight:600;flex-shrink:0;">激活</button>
+          </div>
+          <p style="font-size:12px;color:#94a3b8;margin:0;">在左侧新建 API Token 后，点击「激活用于测试」或手动粘贴到此处</p>
+        </div>
+
+        <p style="font-size:11.5px;color:#94a3b8;margin:auto 0 0;border-top:1px solid #f1f5f9;padding-top:0.75rem;line-height:1.55;">
+          激活后可在下方「接口调用测试」直接发送带鉴权的请求，也可复制到 MCP 配置中使用。
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ 1. 接口调用测试 ══════════════════════════════════════════ -->
+  <div class="card-panel" style="margin-bottom:1.25rem;">
+    <div class="card-panel-head">
+      <div>
+        <p style="font-size:14.5px;font-weight:700;color:#0f172a;margin:0;">接口调用测试</p>
+        <p style="font-size:12px;color:#64748b;margin:2px 0 0;">直接测试 MCP 工具对应的 API 端点</p>
+      </div>
+    </div>
+
+    <div style="padding:1.25rem;">
+
+      <!-- Tool selector -->
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:1.1rem;">
+        <template x-for="t in toolList" :key="t.id">
+          <button type="button" class="tool-tab" :class="activeTool===t.id?'active':''"
+                  @click="activeTool=t.id;testResult=null;buildParams()"
+                  x-text="t.label"></button>
+        </template>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;align-items:start;">
+
+        <!-- Params form -->
+        <div>
+          <span class="exp-label" style="margin-bottom:0.6rem;" x-text="activeTool ? toolById(activeTool).method+' '+toolById(activeTool).endpoint : ''"></span>
+          <div style="display:flex;flex-direction:column;gap:0.75rem;">
+            <template x-for="p in currentParams" :key="p.key">
+              <div>
+                <label class="exp-label" style="margin-bottom:3px;">
+                  <span x-text="p.label"></span>
+                  <span x-show="p.required" style="color:#ef4444;"> *</span>
+                </label>
+                <!-- text input -->
+                <template x-if="p.type==='text'">
+                  <input class="input is-small" type="text" x-model="testParams[p.key]"
+                         :placeholder="p.placeholder||''" />
+                </template>
+                <!-- textarea -->
+                <template x-if="p.type==='textarea'">
+                  <textarea class="textarea is-small" x-model="testParams[p.key]"
+                            rows="3" :placeholder="p.placeholder||''"
+                            style="font-size:13px;resize:vertical;"></textarea>
+                </template>
+                <!-- collection select -->
+                <template x-if="p.type==='collection'">
+                  <div class="select is-small is-fullwidth">
+                    <select x-model="testParams[p.key]">
+                      <option value="default">default</option>
+                      <template x-for="c in collections" :key="c.name">
+                        <option :value="c.name" x-text="c.name"></option>
+                      </template>
+                    </select>
+                  </div>
+                </template>
+                <!-- number/select -->
+                <template x-if="p.type==='select'">
+                  <div class="select is-small is-fullwidth">
+                    <select x-model="testParams[p.key]">
+                      <template x-for="o in p.options" :key="o">
+                        <option :value="o" x-text="o"></option>
+                      </template>
+                    </select>
+                  </div>
+                </template>
+              </div>
+            </template>
+
+            <template x-if="currentParams.length === 0">
+              <p style="font-size:13px;color:#94a3b8;padding:0.5rem 0;">此工具无需参数</p>
+            </template>
+          </div>
+
+          <button type="button" class="button is-primary is-small"
+                  :class="testLoading?'is-loading':''"
+                  :disabled="!token||testLoading"
+                  @click="runTest()"
+                  style="margin-top:1rem;font-weight:600;min-width:80px;">
+            发送请求
+          </button>
+        </div>
+
+        <!-- Result panel -->
+        <div>
+          <span class="exp-label" style="margin-bottom:0.6rem;">响应结果</span>
+          <template x-if="!testResult && !testLoading">
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;
+                        padding:2.5rem;text-align:center;color:#94a3b8;font-size:13px;">
+              点击「发送请求」查看响应
+            </div>
+          </template>
+          <template x-if="testLoading">
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;
+                        padding:2.5rem;text-align:center;color:#94a3b8;font-size:13px;">
+              请求中…
+            </div>
+          </template>
+          <template x-if="testResult && !testLoading">
+            <div>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+                <span :class="testResult.ok?'result-ok':'result-err'"
+                      style="font-size:12px;font-weight:600;padding:2px 8px;border-radius:4px;"
+                      :style="testResult.ok?'color:#16a34a;background:#f0fdf4':'color:#dc2626;background:#fef2f2'"
+                      x-text="testResult.ok ? 'HTTP '+testResult.status+' OK' : 'HTTP '+testResult.status+' Error'"></span>
+                <button type="button" @click="copyText(testResult.body)" class="copy-btn">复制</button>
+              </div>
+              <pre class="result-pre" x-text="testResult.body"></pre>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ 2. MCP 服务器配置 ════════════════════════════════════════ -->
+  <div class="card-panel" style="margin-bottom:1.25rem;">
+    <div class="card-panel-head">
+      <div>
+        <p style="font-size:14.5px;font-weight:700;color:#0f172a;margin:0;">MCP 服务器配置</p>
+        <p style="font-size:12px;color:#64748b;margin:2px 0 0;">适用于任意支持 MCP 协议的 AI 客户端</p>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+        <span style="font-size:11.5px;color:#94a3b8;">兼容：</span>
+        <template x-for="c in mcpClients" :key="c">
+          <span class="tag is-light" style="font-size:11px;" x-text="c"></span>
+        </template>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;">
+
+      <!-- Left: config JSON -->
+      <div style="padding:1.25rem;border-right:1px solid #f1f5f9;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.55rem;">
+          <span class="exp-label" style="margin:0;">mcp-config.json</span>
+          <button type="button" @click="copyText(mcpConfigStr)" class="copy-btn">复制</button>
+        </div>
+        <pre class="code-pre" x-text="mcpConfigStr"></pre>
+        <p class="exp-hint" style="margin-top:6px;">将此配置添加到 MCP 客户端的服务器列表中</p>
+      </div>
+
+      <!-- Right: token display + env cmd -->
+      <div style="padding:1.25rem;">
+        <span class="exp-label">当前 Token</span>
+        <template x-if="token">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:0.85rem;">
+            <input type="text" class="input is-small" :value="token" readonly
+                   style="flex:1;font-family:ui-monospace,monospace;font-size:11px;background:#f8fafc;" />
+            <button type="button" @click="copyText(token)" class="copy-btn">复制</button>
+          </div>
+        </template>
+        <template x-if="!token">
+          <p style="font-size:12.5px;color:#94a3b8;margin:0 0 0.85rem;">在上方接口测试区生成 Token 后显示</p>
+        </template>
+        <span class="exp-label">启动命令（含认证）</span>
+        <pre class="code-pre" x-text="mcpEnvCmd"></pre>
+        <p class="exp-hint">将 Token 填入 <code>AFT_API_KEY</code> 后在项目目录运行</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ 3. Skill 文件生成器 ══════════════════════════════════════ -->
+  <div class="card-panel">
+    <div class="card-panel-head">
+      <div>
+        <p style="font-size:14.5px;font-weight:700;color:#0f172a;margin:0;">Skill 文件生成器</p>
+        <p style="font-size:12px;color:#64748b;margin:2px 0 0;">生成 Markdown 格式的 Agent Skill 配置文件</p>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button type="button" @click="copyText(previewText())" class="copy-btn"
+                :disabled="!sg.skillName.trim()">复制</button>
+        <button type="button" @click="downloadSkill()"
+                :disabled="!sg.skillName.trim()"
+                class="button is-small is-primary" style="font-weight:600;">↓ 下载 .md</button>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:320px 1fr;min-height:480px;">
+
+      <!-- Form -->
+      <div style="padding:1.25rem;border-right:1px solid #f1f5f9;display:flex;flex-direction:column;gap:0.9rem;overflow-y:auto;">
+
+        <!-- Presets -->
+        <div>
+          <span class="exp-label">快速预设</span>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button type="button" class="preset-chip" @click="applyPreset('search')">搜索专家</button>
+            <button type="button" class="preset-chip" @click="applyPreset('assistant')">知识助理</button>
+            <button type="button" class="preset-chip" @click="applyPreset('manager')">文档管理</button>
+            <button type="button" class="preset-chip" @click="applyPreset('full')">全功能</button>
+          </div>
+        </div>
+
+        <div>
+          <label class="exp-label">Skill 名称 <span style="color:#ef4444;">*</span></label>
+          <input class="input is-small" type="text" x-model="sg.skillName"
+                 placeholder="search-products" />
+          <p class="exp-hint">文件名，小写加连字符，如 <code>search-docs</code></p>
+        </div>
+
+        <div>
+          <label class="exp-label">功能描述 <span style="color:#ef4444;">*</span></label>
+          <textarea class="textarea is-small" x-model="sg.description" rows="3"
+                    placeholder="搜索产品知识库，回答产品功能和规格相关问题"
+                    style="font-size:13px;resize:vertical;"></textarea>
+          <p class="exp-hint">Agent 用此描述判断何时调用本 Skill</p>
+        </div>
+
+        <div>
+          <label class="exp-label">目标集合</label>
+          <div class="select is-small is-fullwidth">
+            <select x-model="sg.collection">
+              <option value="default">default</option>
+              <template x-for="c in collections" :key="c.name">
+                <option :value="c.name" x-text="c.name + '（' + c.count + ' 块）'"></option>
+              </template>
+            </select>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.65rem;">
+          <div>
+            <label class="exp-label">返回结果数</label>
+            <div class="select is-small is-fullwidth">
+              <select x-model="sg.topK">
+                <option value="3">Top 3</option>
+                <option value="5">Top 5</option>
+                <option value="8">Top 8</option>
+                <option value="10">Top 10</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label class="exp-label">语言</label>
+            <div class="select is-small is-fullwidth">
+              <select x-model="sg.lang">
+                <option value="zh">中文</option>
+                <option value="en">English</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label class="exp-label">包含能力</label>
+          <div style="display:flex;flex-direction:column;gap:7px;margin-top:2px;">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:#374151;">
+              <input type="checkbox" x-model="sg.includeSearch" style="accent-color:#111;" /> 语义搜索
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:#374151;">
+              <input type="checkbox" x-model="sg.includeUpload" style="accent-color:#111;" /> 文本上传
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:#374151;">
+              <input type="checkbox" x-model="sg.includeList" style="accent-color:#111;" /> 列出集合
+            </label>
+          </div>
+        </div>
+
+        <!-- Token 写入方式 -->
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:9px;padding:0.85rem;">
+          <label class="exp-label" style="margin-bottom:8px;">Token 写入方式</label>
+
+          <!-- Option A: env var -->
+          <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;margin-bottom:8px;">
+            <input type="radio" x-model="sg.tokenMode" value="env"
+                   style="accent-color:#111;margin-top:2px;flex-shrink:0;" />
+            <div>
+              <span style="font-size:13px;font-weight:600;color:#374151;">环境变量</span>
+              <p style="font-size:11.5px;color:#64748b;margin:2px 0 0;">
+                写入 <code style="font-family:ui-monospace,monospace;font-size:10.5px;color:#444;">$AKP_TOKEN</code>，
+                运行前设置 <code style="font-family:ui-monospace,monospace;font-size:10.5px;">export AKP_TOKEN=…</code>
+              </p>
+            </div>
+          </label>
+
+          <!-- Option B: embed -->
+          <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;">
+            <input type="radio" x-model="sg.tokenMode" value="embed"
+                   style="accent-color:#111;margin-top:2px;flex-shrink:0;" />
+            <div style="flex:1;min-width:0;">
+              <span style="font-size:13px;font-weight:600;color:#374151;">嵌入当前 Token</span>
+              <p style="font-size:11.5px;color:#64748b;margin:2px 0 0;">直接写入，开箱即用，7 天后失效</p>
+              <!-- Token status when embed selected -->
+              <div x-show="sg.tokenMode==='embed'" style="margin-top:7px;">
+                <template x-if="token">
+                  <div style="display:flex;align-items:center;gap:6px;background:#f0fdf4;
+                              border:1px solid #bbf7d0;border-radius:6px;padding:5px 8px;">
+                    <svg width="12" height="12" fill="none" stroke="#16a34a" stroke-width="2.5" viewBox="0 0 24 24" style="flex-shrink:0;">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+                    </svg>
+                    <code style="font-family:ui-monospace,monospace;font-size:10.5px;color:#15803d;
+                                 overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+                          x-text="token.slice(0,32)+'…'"></code>
+                  </div>
+                </template>
+                <template x-if="!token">
+                  <div style="display:flex;align-items:center;gap:6px;background:#fef3c7;
+                              border:1px solid #fcd34d;border-radius:6px;padding:5px 8px;">
+                    <svg width="12" height="12" fill="none" stroke="#d97706" stroke-width="2" viewBox="0 0 24 24" style="flex-shrink:0;">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                    </svg>
+                    <span style="font-size:11.5px;color:#92400e;">请先在页面顶部获取 Token</span>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </label>
+        </div>
+
+        <!-- Built-in skills -->
+        <div style="padding-top:0.85rem;border-top:1px solid #f1f5f9;margin-top:auto;">
+          <span class="exp-label" style="margin-bottom:6px;">平台内置 Skill</span>
+          <template x-for="s in builtinSkills" :key="s.name">
+            <div style="display:flex;align-items:center;justify-content:space-between;
+                        padding:5px 8px;border:1px solid #e2e8f0;border-radius:7px;
+                        margin-bottom:5px;background:#fff;">
+              <span style="font-size:12.5px;color:#1e293b;font-family:ui-monospace,monospace;" x-text="s.name + '.md'"></span>
+              <button type="button" @click="copyBuiltin(s)" class="copy-btn" style="padding:2px 8px;">复制</button>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Preview -->
+      <div style="padding:1.25rem;display:flex;flex-direction:column;gap:0.65rem;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span style="font-size:12.5px;font-weight:600;color:#475569;">文件预览</span>
+          <span style="font-size:11.5px;color:#94a3b8;font-family:ui-monospace,monospace;"
+                x-text="(sg.skillName||'skill') + '.md'"></span>
+        </div>
+        <div class="skill-preview" x-html="highlightedPreview()"></div>
+        <p style="font-size:12px;color:#94a3b8;margin:0;">
+          将 .md 文件放入 Agent 的 Skill 目录，或通过客户端的 Skill 管理功能导入
+        </p>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function exportHub() {
+  return {
+    collections: [], builtinSkills: [],
+    mcpConfigStr: '', mcpEnvCmd: '', mcpClients: [],
+    token: '', pasteToken: '',
+
+    /* ── API Token management ── */
+    tokens: [], tokensLoading: false,
+    newTokenName: '', showCreateToken: false, tokenCreating: false,
+    createdToken: null,
+
+    /* ── Test section ── */
+    activeTool: 'search_knowledge',
+    testParams: {}, testResult: null, testLoading: false,
+    toolList: [
+      { id: 'search_knowledge', label: '语义搜索', method: 'POST', endpoint: '/me/search' },
+      { id: 'list_collections', label: '列出集合', method: 'GET',  endpoint: '/me/collections' },
+      { id: 'add_text',         label: '添加文档', method: 'POST', endpoint: '/me/documents/text' },
+      { id: 'list_chunks',      label: '浏览分块', method: 'GET',  endpoint: '/me/chunks' },
+    ],
+    toolParams: {
+      search_knowledge: [
+        { key:'query',      label:'搜索词',   type:'text',       required:true,  placeholder:'输入自然语言查询' },
+        { key:'collection', label:'集合',     type:'collection', required:false },
+        { key:'top_k',      label:'返回数量', type:'select',     required:false, options:[3,5,8,10] },
+      ],
+      list_collections: [],
+      add_text: [
+        { key:'title',      label:'文档标题', type:'text',       required:true,  placeholder:'我的笔记' },
+        { key:'content',    label:'正文内容', type:'textarea',   required:true,  placeholder:'文档全文…' },
+        { key:'collection', label:'集合',     type:'collection', required:false },
+      ],
+      list_chunks: [
+        { key:'collection', label:'集合',     type:'collection', required:false },
+        { key:'page_size',  label:'每页数量', type:'select',     required:false, options:[10,20,50] },
+      ],
+    },
+
+    get currentParams() { return this.toolParams[this.activeTool] || []; },
+    toolById(id) { return this.toolList.find(t => t.id === id) || {}; },
+
+    /* ── Skill generator ── */
+    sg: {
+      skillName: 'search-knowledge',
+      description: '搜索知识库，检索与问题相关的文档内容，辅助回答专业领域问题',
+      collection: 'default',
+      topK: '5', lang: 'zh',
+      includeSearch: true, includeUpload: false, includeList: false,
+      tokenMode: 'env',   // 'env' | 'embed'
+    },
+
+    get tokenForSkill() {
+      if (this.sg.tokenMode === 'embed' && this.token) return this.token;
+      return '$AKP_TOKEN';
+    },
+
+    async loadTokens() {
+      this.tokensLoading = true;
+      try {
+        const res = await fetch('/me/tokens');
+        if (res.ok) { const d = await res.json(); this.tokens = d.tokens || []; }
+      } finally { this.tokensLoading = false; }
+    },
+
+    async createToken() {
+      if (!this.newTokenName.trim()) return;
+      this.tokenCreating = true;
+      try {
+        const res = await fetch('/me/tokens', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: this.newTokenName.trim() }),
+        });
+        if (res.ok) {
+          this.createdToken = await res.json();
+          this.showCreateToken = false;
+          this.newTokenName = '';
+          await this.loadTokens();
+        }
+      } finally { this.tokenCreating = false; }
+    },
+
+    async deleteToken(id) {
+      if (!confirm('确认删除此 Token？删除后无法恢复。')) return;
+      await fetch(`/me/tokens/${id}`, { method: 'DELETE' });
+      if (this.createdToken && this.createdToken.id === id) this.createdToken = null;
+      await this.loadTokens();
+    },
+
+    async init() {
+      const [mcp, skillsResp, colResp] = await Promise.all([
+        fetch('/export/mcp-config').then(r => r.json()),
+        fetch('/export/skills').then(r => r.json()),
+        fetch('/me/collections').then(r => r.json()),
+      ]);
+      this.mcpConfigStr = JSON.stringify(mcp, null, 2);
+      this.builtinSkills = skillsResp.skills || [];
+      this.collections = colResp.collections || [];
+      this.mcpClients = ['Claude Desktop', 'Cursor', 'Continue.dev', 'Cody', 'Zed'];
+      this.mcpEnvCmd =
+        `export AFT_API_BASE="${window.location.origin}"\n` +
+        `export AFT_API_KEY="<YOUR_TOKEN>"\n` +
+        `agentf-mcp`;
+      this.buildParams();
+      await this.loadTokens();
+    },
+
+    buildParams() {
+      const defaults = { collection: 'default', top_k: 5, page_size: 10 };
+      this.testParams = {};
+      (this.toolParams[this.activeTool] || []).forEach(p => {
+        this.testParams[p.key] = defaults[p.key] ?? (p.options ? p.options[0] : '');
+      });
+    },
+
+    async runTest() {
+      if (!this.token) return;
+      const tool = this.toolById(this.activeTool);
+      const headers = { 'Authorization': 'Bearer ' + this.token, 'Content-Type': 'application/json' };
+      this.testLoading = true; this.testResult = null;
+      try {
+        let res;
+        if (tool.method === 'GET') {
+          const q = new URLSearchParams(
+            Object.fromEntries(Object.entries(this.testParams).filter(([,v]) => v !== '' && v !== undefined))
+          );
+          res = await fetch(tool.endpoint + (q.toString() ? '?' + q : ''), { headers });
+        } else {
+          const body = {};
+          (this.toolParams[this.activeTool] || []).forEach(p => {
+            const v = this.testParams[p.key];
+            if (v !== '' && v !== undefined) body[p.key] = p.type === 'select' ? Number(v) : v;
+          });
+          res = await fetch(tool.endpoint, { method:'POST', headers, body: JSON.stringify(body) });
+        }
+        const data = await res.json();
+        this.testResult = { ok: res.ok, status: res.status, body: JSON.stringify(data, null, 2) };
+      } catch(e) {
+        this.testResult = { ok: false, status: 0, body: e.message };
+      } finally { this.testLoading = false; }
+    },
+
+    applyPreset(name) {
+      const presets = {
+        search:    { skillName:'search-knowledge', description:'在知识库中语义检索相关内容，用于回答专业领域问题', includeSearch:true,  includeUpload:false, includeList:false, topK:'5' },
+        assistant: { skillName:'knowledge-assistant', description:'检索知识库内容并列出可用集合，辅助全面回答用户问题', includeSearch:true,  includeUpload:false, includeList:true,  topK:'8' },
+        manager:   { skillName:'doc-manager', description:'向知识库添加新文档并查看集合状态', includeSearch:false, includeUpload:true,  includeList:true,  topK:'5' },
+        full:      { skillName:'knowledge-hub', description:'完整知识库管理：搜索、添加文档、查看集合', includeSearch:true,  includeUpload:true,  includeList:true,  topK:'5' },
+      };
+      if (presets[name]) Object.assign(this.sg, presets[name]);
+    },
+
+    previewText() {
+      const { description, collection, topK, lang, includeSearch, includeUpload, includeList } = this.sg;
+      const base = window.location.origin;
+      const zh = lang === 'zh';
+      const tok = this.tokenForSkill;
+      const lines = [];
+
+      // ── frontmatter ──
+      lines.push('---');
+      lines.push(`description: ${description || '（请填写描述）'}`);
+      lines.push('---', '');
+
+      // ── goal ──
+      if (zh) {
+        lines.push(`收到「\${ARGUMENTS}」后，在知识库集合「${collection}」中检索，整合最相关内容作答。`);
+      } else {
+        lines.push(`Given "\${ARGUMENTS}", search collection "${collection}" and incorporate the most relevant results into your answer.`);
+      }
+      lines.push('');
+
+      // ── auth ──
+      lines.push(zh ? '## 认证' : '## Auth', '');
+      lines.push(zh ? '所有请求均携带以下 Header：' : 'Include this header in every request:');
+      lines.push('```');
+      lines.push(`Authorization: Bearer ${tok}`);
+      lines.push(`Content-Type: application/json`);
+      lines.push('```');
+      if (tok === '$AKP_TOKEN') {
+        lines.push('');
+        lines.push(zh
+          ? '> 运行前执行：`export AKP_TOKEN=<your_token>`'
+          : '> Before running: `export AKP_TOKEN=<your_token>`');
+      }
+      lines.push('');
+
+      // ── search ──
+      if (includeSearch) {
+        lines.push(zh ? '## 搜索' : '## Search', '');
+        lines.push(zh
+          ? `\`POST ${base}/me/search\``
+          : `\`POST ${base}/me/search\``);
+        lines.push('', '```json');
+        lines.push('{');
+        lines.push(`  "query": "${zh ? '<从用户问题提炼的核心关键词>' : '<key phrase extracted from user question>'}",`);
+        lines.push(`  "collection": "${collection}",`);
+        lines.push(`  "top_k": ${topK}`);
+        lines.push('}');
+        lines.push('```', '');
+        lines.push(zh
+          ? `返回 \`hits[]\`，按 \`score\` 降序（0–1）。取前 ${topK} 条，以 \`title\` 标注来源，将内容整合进回答。若 \`hits\` 为空，告知用户暂无相关文档。`
+          : `Returns \`hits[]\` sorted by \`score\` desc (0–1). Use top ${topK}; cite \`title\` as source. If empty, tell the user no relevant docs were found.`);
+        lines.push('');
+      }
+
+      // ── upload ──
+      if (includeUpload) {
+        lines.push(zh ? '## 添加文档' : '## Add Document', '');
+        lines.push(zh
+          ? `\`POST ${base}/me/documents/text\``
+          : `\`POST ${base}/me/documents/text\``);
+        lines.push('', '```json');
+        lines.push('{');
+        lines.push(`  "title": "${zh ? '<文档标题>' : '<document title>'}",`);
+        lines.push(`  "content": "${zh ? '<正文全文>' : '<full content>'}",`);
+        lines.push(`  "collection": "${collection}"`);
+        lines.push('}');
+        lines.push('```');
+        lines.push('');
+        lines.push(zh
+          ? '返回 `doc_id` 和 `chunk_count`，确认添加成功后告知用户。'
+          : 'Returns `doc_id` and `chunk_count`. Confirm success to the user.');
+        lines.push('');
+      }
+
+      // ── list ──
+      if (includeList) {
+        lines.push(zh ? '## 查看集合' : '## List Collections', '');
+        lines.push(zh
+          ? `\`GET ${base}/me/collections\``
+          : `\`GET ${base}/me/collections\``);
+        lines.push('');
+        lines.push(zh
+          ? '返回 `collections[]`，每项含 `name`（集合名）和 `count`（分块数）。列出后供用户选择。'
+          : 'Returns `collections[]` with `name` and `count` per item. Present the list to the user.');
+        lines.push('');
+      }
+
+      if (!includeSearch && !includeUpload && !includeList) {
+        lines.push(zh ? '（请至少勾选一项能力）' : '(Select at least one capability)');
+      }
+
+      return lines.join('\n');
+    },
+
+    highlightedPreview() {
+      const esc = this.previewText()
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      return esc
+        // frontmatter delimiters
+        .replace(/^(---\s*)$/gm, '<span style="color:#475569">$1</span>')
+        // description line
+        .replace(/^(description:.+)$/gm, '<span style="color:#86efac">$1</span>')
+        // headings
+        .replace(/^(##.+)$/gm, '<span style="color:#aaa;font-weight:700">$1</span>')
+        // inline code `…`
+        .replace(/(`[^`\n]+`)/g, '<span style="color:#7dd3fc">$1</span>')
+        // code blocks
+        .replace(/(```[\s\S]*?```)/g, '<span style="color:#fda4af">$1</span>')
+        // blockquote
+        .replace(/^(&gt;.+)$/gm, '<span style="color:#fcd34d">$1</span>');
+    },
+
+    downloadSkill() {
+      const name = (this.sg.skillName || 'skill').replace(/[^a-z0-9\-_]/gi,'') + '.md';
+      const a = Object.assign(document.createElement('a'), {
+        href: URL.createObjectURL(new Blob([this.previewText()], { type:'text/markdown' })),
+        download: name,
+      });
+      a.click();
+    },
+
+    async copyBuiltin(skill) {
+      navigator.clipboard.writeText(await fetch(skill.url).then(r => r.text()));
+    },
+
+    copyText(t) { navigator.clipboard.writeText(t); },
+  };
+}
+</script>
+{% endblock %}

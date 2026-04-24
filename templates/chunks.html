@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+{% block title %}分块管理{% endblock %}
+{% block page_title %}分块管理{% endblock %}
+{% block page_subtitle %}浏览集合内的向量分块{% endblock %}
+
+{% block content %}
+<style>
+  .chunk-row { border-bottom: 1px solid #f1f5f9; cursor: pointer; transition: background .1s; }
+  .chunk-row:hover { background: #f8fafc; }
+  .chunk-row.is-open { background: #fafafa; }
+  .chunk-row:last-child { border-bottom: none; }
+  .filter-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border: 1px solid #e2e8f0; border-radius: 20px;
+    font-size: 12.5px; color: #555; background: #fff; cursor: pointer;
+    transition: border-color .12s, color .12s, background .12s;
+    white-space: nowrap;
+  }
+  .filter-pill:hover { border-color: #111; color: #111; background: #f5f5f5; }
+  .filter-pill.active { border-color: #111; color: #111; background: #f0f0f0; font-weight: 600; }
+</style>
+
+<div x-data="chunkBrowser()" x-init="init()">
+
+  <!-- ── Top controls ─────────────────────────────────────────────── -->
+  <div class="card-panel" style="padding:1rem 1.35rem;margin-bottom:1rem;">
+    <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+
+      <!-- Collection -->
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span style="font-size:12px;color:#94a3b8;font-weight:500;">集合</span>
+        <div class="select is-small">
+          <select x-model="collection" @change="onCollectionChange()">
+            <template x-for="c in collections" :key="c.name">
+              <option :value="c.name" x-text="c.name + ' · ' + c.count + ' 块'"></option>
+            </template>
+          </select>
+        </div>
+      </div>
+
+      <!-- Divider -->
+      <span style="color:#e2e8f0;font-size:18px;">|</span>
+
+      <!-- Doc pills -->
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+        <span style="font-size:12px;color:#94a3b8;font-weight:500;">文档</span>
+        <button type="button" class="filter-pill" :class="!docId?'active':''" @click="docId='';page=1;load()">
+          全部
+        </button>
+        <template x-for="d in docs" :key="d.doc_id">
+          <button type="button" class="filter-pill" :class="docId===d.doc_id?'active':''"
+                  @click="docId=d.doc_id;page=1;load()" x-text="d.title"></button>
+        </template>
+      </div>
+
+      <!-- Spacer + count -->
+      <span style="margin-left:auto;font-size:12.5px;color:#94a3b8;white-space:nowrap;"
+            x-text="total + ' 个分块'"></span>
+    </div>
+  </div>
+
+  <!-- ── Chunk list ────────────────────────────────────────────────── -->
+  <div class="card-panel">
+
+    <!-- Loading skeleton -->
+    <template x-if="loading">
+      <div style="padding:3.5rem;text-align:center;color:#94a3b8;font-size:13.5px;">
+        <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"
+             style="display:inline-block;animation:spin 1s linear infinite;vertical-align:middle;margin-right:6px;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+        </svg>
+        加载中…
+      </div>
+    </template>
+    <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+
+    <!-- Empty -->
+    <template x-if="!loading && chunks.length === 0">
+      <div style="padding:4rem 2rem;text-align:center;">
+        <svg width="40" height="40" fill="none" stroke="#cbd5e1" stroke-width="1.2" viewBox="0 0 24 24"
+             style="margin:0 auto 0.8rem;display:block;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/>
+        </svg>
+        <p style="color:#94a3b8;font-size:13.5px;">
+          暂无分块，<a href="/upload" style="color:#111;font-weight:500;">先上传文档</a>
+        </p>
+      </div>
+    </template>
+
+    <!-- Rows -->
+    <template x-for="(chunk, idx) in chunks" :key="chunk.chunk_id">
+      <div class="chunk-row" :class="expanded===chunk.chunk_id?'is-open':''">
+
+        <!-- Summary row -->
+        <div style="display:flex;align-items:center;padding:0.72rem 1.25rem;gap:12px;"
+             @click="expanded = expanded===chunk.chunk_id ? null : chunk.chunk_id">
+
+          <!-- Serial number -->
+          <span style="font-size:11px;font-weight:700;color:#cbd5e1;width:28px;text-align:right;flex-shrink:0;"
+                x-text="'#' + ((page-1)*pageSize + idx + 1)"></span>
+
+          <!-- Doc title + chunk position -->
+          <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-size:13px;font-weight:600;color:#1e293b;
+                           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:260px;"
+                    x-text="chunk.metadata.title || '未知文档'"></span>
+              <span style="font-size:11px;color:#94a3b8;background:#f1f5f9;
+                           border-radius:4px;padding:1px 6px;flex-shrink:0;white-space:nowrap;"
+                    x-text="'块 ' + ((chunk.metadata.chunk_index ?? 0)+1) + ' / ' + (chunk.metadata.total_chunks ?? '?')"></span>
+            </div>
+            <!-- Content preview -->
+            <p style="font-size:12.5px;color:#64748b;margin:3px 0 0;
+                      overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+               x-text="chunk.content.slice(0, 120) + (chunk.content.length > 120 ? '…' : '')"></p>
+          </div>
+
+          <!-- Right: char count + chevron -->
+          <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
+            <span style="font-size:11.5px;color:#94a3b8;" x-text="chunk.content.length + ' 字'"></span>
+            <svg width="13" height="13" fill="none" stroke="#94a3b8" stroke-width="2.5" viewBox="0 0 24 24"
+                 style="flex-shrink:0;transition:transform .18s;"
+                 :style="expanded===chunk.chunk_id?'transform:rotate(180deg)':''">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+            </svg>
+          </div>
+        </div>
+
+        <!-- Expanded panel -->
+        <div x-show="expanded === chunk.chunk_id" x-cloak
+             style="padding:0 1.25rem 1.1rem 1.25rem;">
+          <pre style="font-size:13px;color:#334155;line-height:1.7;white-space:pre-wrap;
+                      word-break:break-word;background:#f8fafc;border:1px solid #e9ecef;
+                      border-radius:8px;padding:0.85rem 1rem;margin-bottom:0.8rem;
+                      font-family:inherit;max-height:320px;overflow-y:auto;"
+               x-text="chunk.content"></pre>
+
+          <div style="display:flex;align-items:center;gap:1.25rem;flex-wrap:wrap;">
+            <span style="font-size:11.5px;color:#94a3b8;">
+              Doc&nbsp;<code style="font-family:ui-monospace,monospace;font-size:10.5px;"
+                              x-text="chunk.metadata.doc_id"></code>
+            </span>
+            <span style="font-size:11.5px;color:#94a3b8;">
+              Chunk&nbsp;<code style="font-family:ui-monospace,monospace;font-size:10.5px;"
+                                x-text="chunk.chunk_id.slice(-12)"></code>
+            </span>
+            <template x-if="chunk.metadata.source">
+              <span style="font-size:11.5px;color:#94a3b8;" x-text="'来源: ' + chunk.metadata.source"></span>
+            </template>
+            <button type="button" @click.stop="copyChunk(chunk)"
+                    style="margin-left:auto;display:flex;align-items:center;gap:5px;
+                           background:none;border:1px solid #e2e8f0;border-radius:6px;
+                           padding:4px 10px;cursor:pointer;font-size:12px;color:#111;
+                           transition:background .1s;"
+                    onmouseover="this.style.background='#f5f5f5'"
+                    onmouseout="this.style.background='none'">
+              <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                      d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+              </svg>
+              复制内容
+            </button>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- Pagination -->
+    <div x-show="total > pageSize"
+         style="padding:0.85rem 1.25rem;border-top:1px solid #f1f5f9;
+                display:flex;align-items:center;justify-content:space-between;">
+      <span style="font-size:12.5px;color:#94a3b8;"
+            x-text="'第 '+((page-1)*pageSize+1)+'–'+Math.min(page*pageSize,total)+' 条，共 '+total+' 条'"></span>
+      <div style="display:flex;gap:6px;">
+        <button type="button" class="button is-small" :disabled="page<=1"
+                @click="page--;load()" style="font-size:12.5px;">← 上一页</button>
+        <button type="button" class="button is-small" :disabled="page*pageSize>=total"
+                @click="page++;load()" style="font-size:12.5px;">下一页 →</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function chunkBrowser() {
+  return {
+    collections: [], docs: [],
+    collection: '', docId: '',
+    chunks: [], total: 0, page: 1, pageSize: 20,
+    loading: false, expanded: null,
+
+    async init() {
+      // Read ?collection and ?doc_id from URL
+      const params = new URLSearchParams(location.search);
+      const urlCol = params.get('collection') || '';
+      const urlDoc = params.get('doc_id') || '';
+
+      const data = await fetch('/me/collections').then(r => r.json());
+      this.collections = data.collections || [];
+
+      if (this.collections.length === 0) return;
+
+      this.collection = this.collections.find(c => c.name === urlCol)
+        ? urlCol
+        : this.collections[0].name;
+
+      await this.loadDocs();
+
+      if (urlDoc && this.docs.find(d => d.doc_id === urlDoc)) {
+        this.docId = urlDoc;
+      }
+
+      await this.load();
+    },
+
+    async onCollectionChange() {
+      this.docId = ''; this.page = 1;
+      await this.loadDocs();
+      await this.load();
+    },
+
+    async loadDocs() {
+      if (!this.collection) return;
+      const data = await fetch(`/me/documents?collection=${encodeURIComponent(this.collection)}`).then(r => r.json());
+      this.docs = data.documents || [];
+    },
+
+    async load() {
+      if (!this.collection) return;
+      this.loading = true; this.expanded = null;
+      const p = new URLSearchParams({ collection: this.collection, page: this.page, page_size: this.pageSize });
+      if (this.docId) p.set('doc_id', this.docId);
+      const data = await fetch('/me/chunks?' + p).then(r => r.json());
+      this.chunks = data.chunks || [];
+      this.total = data.total || 0;
+      this.loading = false;
+    },
+
+    copyChunk(chunk) {
+      navigator.clipboard.writeText(`[${chunk.metadata.title || ''}]\n${chunk.content}`);
+    },
+  };
+}
+</script>
+{% endblock %}

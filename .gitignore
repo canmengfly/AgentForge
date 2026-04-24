@@ -1,0 +1,39 @@
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+
+# Data & runtime files
+data/
+*.db
+*.sqlite
+
+# Python build artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.whl
+*.tar.gz
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+
+# Claude Code local config
+.claude/

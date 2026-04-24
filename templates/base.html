@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}{% endblock %} — AgentForge</title>
+  <style>
+    @import "https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css";
+
+    /* ── Override Bulma primary with near-black ─────────────────── */
+    :root {
+      --bulma-primary-h: 0; --bulma-primary-s: 0%; --bulma-primary-l: 8%;
+      --bulma-primary: hsl(0,0%,8%);
+      --bulma-primary-invert-l: 100%;
+      --bulma-primary-light-l: 92%;
+      --bulma-primary-dark-l: 4%;
+      --bulma-link-h: 0; --bulma-link-s: 0%; --bulma-link-l: 8%;
+      --bulma-link: hsl(0,0%,8%);
+      --bulma-link-invert-l: 100%;
+      --bulma-link-light-l: 92%;
+      --bulma-link-dark-l: 4%;
+    }
+
+    html, body { height: 100%; margin: 0; }
+    [x-cloak] { display: none !important; }
+
+    /* ── Layout ─────────────────────────────────────────────────── */
+    .akp-wrap { display: flex; min-height: 100vh; }
+
+    /* ── Sidebar ─────────────────────────────────────────────────── */
+    .akp-sb {
+      width: 216px; flex-shrink: 0;
+      background-color: #0a0a0a;
+      display: flex; flex-direction: column;
+      height: 100vh; position: sticky; top: 0;
+      overflow-y: auto; overflow-x: hidden; z-index: 40;
+    }
+
+    .sb-brand {
+      padding: 1.35rem 1.15rem 1.1rem;
+      border-bottom: 1px solid rgba(255,255,255,.06);
+      flex-shrink: 0;
+    }
+    .sb-brand-sub {
+      color: rgba(255,255,255,.22);
+      font-size: 9.5px; margin-top: 6px;
+      letter-spacing: .03em; line-height: 1.4;
+    }
+
+    .sb-nav { padding: 0.8rem 0.55rem; flex: 1; }
+    .sb-group-label {
+      color: rgba(255,255,255,.2);
+      font-size: 0.58rem; font-weight: 700;
+      letter-spacing: .12em; text-transform: uppercase;
+      padding: 0 0.5rem;
+      margin: 0.8rem 0 0.3rem;
+    }
+    .sb-group-label:first-child { margin-top: 0; }
+    .sb-sep { border-top: 1px solid rgba(255,255,255,.06); margin: 0.55rem 0; }
+
+    .sb-link {
+      display: flex; align-items: center; gap: 8px;
+      padding: 0.48rem 0.6rem;
+      border-radius: 6px;
+      color: rgba(255,255,255,.44);
+      font-size: 12.5px; font-weight: 500;
+      text-decoration: none;
+      transition: background .1s, color .1s;
+      margin-bottom: 1px;
+    }
+    .sb-link:hover  { background: rgba(255,255,255,.07); color: rgba(255,255,255,.8); }
+    .sb-link.active { background: rgba(255,255,255,.1); color: #fff; }
+    .sb-link svg    { flex-shrink: 0; opacity: .65; }
+    .sb-link.active svg { opacity: 1; }
+
+    .sb-foot {
+      border-top: 1px solid rgba(255,255,255,.06);
+      padding: 0.6rem; position: relative; flex-shrink: 0;
+    }
+    .sb-user-btn {
+      display: flex; align-items: center; gap: 8px;
+      width: 100%; padding: 0.48rem 0.5rem;
+      border-radius: 6px; cursor: pointer;
+      background: none; border: none;
+      transition: background .1s;
+    }
+    .sb-user-btn:hover { background: rgba(255,255,255,.07); }
+    .sb-avatar {
+      width: 27px; height: 27px; border-radius: 50%;
+      background: #2a2a2a; color: rgba(255,255,255,.7);
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; border: 1px solid rgba(255,255,255,.1);
+    }
+    .sb-uname { color: rgba(255,255,255,.8); font-size: 12px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sb-urole { color: rgba(255,255,255,.28); font-size: 10px; }
+    .sb-user-menu {
+      position: absolute; bottom: calc(100% - 2px); left: 8px; right: 8px;
+      background: #fff; border-radius: 8px;
+      box-shadow: 0 8px 28px rgba(0,0,0,.18);
+      overflow: hidden; z-index: 50;
+      border: 1px solid #e8e8e8;
+    }
+    .sb-user-menu a {
+      display: flex; align-items: center; gap: 8px;
+      padding: 0.62rem 1rem; font-size: 13px; color: #333;
+      text-decoration: none; transition: background .1s;
+    }
+    .sb-user-menu a:hover { background: #f5f5f5; color: #111; }
+
+    /* ── Main content ─────────────────────────────────────────────── */
+    .akp-main { flex: 1; min-width: 0; display: flex; flex-direction: column; background: #f5f5f5; }
+
+    .akp-topbar {
+      background: #fff; border-bottom: 1px solid #e8e8e8;
+      padding: 0.85rem 2rem;
+      display: flex; align-items: center; justify-content: space-between;
+      position: sticky; top: 0; z-index: 20;
+    }
+    .topbar-title { font-size: 15px; font-weight: 700; color: #111; margin: 0; line-height: 1.3; }
+    .topbar-sub   { font-size: 12px; color: #888; margin: 2px 0 0; }
+
+    .akp-content { padding: 1.75rem 2rem; flex: 1; }
+
+    /* ── Card / panel ─────────────────────────────────────────────── */
+    .card-panel {
+      background: #fff; border-radius: 10px;
+      border: 1px solid #e8e8e8; overflow: hidden;
+    }
+    .card-panel-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.85rem 1.25rem;
+      border-bottom: 1px solid #f2f2f2;
+    }
+    .card-panel-title { font-weight: 600; color: #111; font-size: 13.5px; margin: 0; }
+
+    /* ── Stat card ─────────────────────────────────────────────────── */
+    .stat-card { background: #fff; border-radius: 10px; border: 1px solid #e8e8e8; padding: 1.15rem 1.35rem; }
+    .stat-icon  { width: 38px; height: 38px; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+    .stat-val   { font-size: 1.9rem; font-weight: 700; color: #111; line-height: 1.1; margin-top: 10px; }
+    .stat-lbl   { font-size: 12.5px; color: #777; font-weight: 500; }
+
+    /* ── Doc row ───────────────────────────────────────────────────── */
+    .doc-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.75rem 1.25rem; border-bottom: 1px solid #f5f5f5;
+      transition: background .1s;
+    }
+    .doc-row:last-child { border-bottom: none; }
+    .doc-row:hover { background: #fafafa; }
+
+    /* ── Drop zone ─────────────────────────────────────────────────── */
+    .drop-zone {
+      border: 1.5px dashed #d4d4d4; border-radius: 10px;
+      padding: 3rem 2rem; text-align: center; cursor: pointer;
+      transition: border-color .14s, background .14s;
+    }
+    .drop-zone:hover, .drop-zone.dragging { border-color: #111; background: #fafafa; }
+
+    /* ── Score bar ─────────────────────────────────────────────────── */
+    .score-bar  { height: 3px; border-radius: 99px; background: #ebebeb; overflow: hidden; margin: 8px 0; }
+    .score-fill { height: 100%; border-radius: 99px; transition: width .3s; }
+
+    /* ── Bulma tweaks ──────────────────────────────────────────────── */
+    .tabs li.is-active a { border-bottom-color: #111 !important; color: #111 !important; }
+
+    .card-panel .table { margin: 0; }
+    .card-panel .table thead th {
+      background: #fafafa; font-size: 11.5px; color: #888;
+      font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+      border-bottom: 1px solid #e8e8e8; padding: 0.6rem 1.1rem;
+    }
+    .card-panel .table tbody td { padding: 0.7rem 1.1rem; border-color: #f5f5f5; vertical-align: middle; font-size: 13px; }
+    .card-panel .table.is-hoverable tbody tr:hover { background: #fafafa; }
+
+    .pagination-previous, .pagination-next {
+      border-radius: 5px; font-size: 13px; border-color: #e8e8e8; color: #555;
+    }
+    .pagination-previous:hover, .pagination-next:hover { border-color: #111; color: #111; }
+
+    .input:focus, .textarea:focus, .select select:focus {
+      border-color: #111;
+      box-shadow: 0 0 0 2px rgba(0,0,0,.06);
+    }
+
+    .notification.is-compact { padding: 0.75rem 1rem; font-size: 13.5px; }
+
+    /* ── Icon btn ──────────────────────────────────────────────────── */
+    .icon-btn {
+      background: none; border: none; cursor: pointer; padding: 5px;
+      border-radius: 5px; color: #bbb; display: inline-flex;
+      transition: color .12s, background .12s;
+    }
+    .icon-btn:hover { color: #ef4444; background: #fef2f2; }
+  </style>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body>
+<div class="akp-wrap" x-data="{}">
+
+  <!-- ╔══ Sidebar ═══════════════════════════════════════════════════╗ -->
+  <aside class="akp-sb">
+
+    <!-- Brand -->
+    <div class="sb-brand">
+      <img src="/static/AgentForge.svg" alt="AgentForge"
+           style="width:168px;height:auto;max-width:100%;display:block;filter:invert(1);opacity:.88;" />
+      <div class="sb-brand-sub">Agent Data Distillation Platform</div>
+    </div>
+
+    <!-- Nav -->
+    <nav class="sb-nav">
+      {% if current_user %}
+        {% if current_user.role.value == 'admin' %}
+          <div class="sb-group-label">管理</div>
+          <a href="/admin" class="sb-link {% if request.url.path == '/admin' %}active{% endif %}">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+            数据概览
+          </a>
+          <a href="/admin/users" class="sb-link {% if request.url.path == '/admin/users' %}active{% endif %}">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            用户管理
+          </a>
+          <div class="sb-sep"></div>
+          <div class="sb-group-label">知识库</div>
+        {% endif %}
+
+        <a href="/dashboard" class="sb-link {% if request.url.path == '/dashboard' %}active{% endif %}">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+          我的主页
+        </a>
+        <a href="/upload" class="sb-link {% if request.url.path == '/upload' %}active{% endif %}">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+          上传文档
+        </a>
+        <a href="/search" class="sb-link {% if request.url.path == '/search' %}active{% endif %}">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          语义搜索
+        </a>
+        <a href="/chunks" class="sb-link {% if request.url.path == '/chunks' %}active{% endif %}">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/></svg>
+          分块管理
+        </a>
+        <div class="sb-sep"></div>
+        <div class="sb-group-label">集成</div>
+        <a href="/export" class="sb-link {% if request.url.path == '/export' %}active{% endif %}">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+          Agent 集成
+        </a>
+      {% endif %}
+    </nav>
+
+    <!-- User footer -->
+    {% if current_user %}
+    <div class="sb-foot" x-data="{ open: false }">
+      <button class="sb-user-btn" @click="open = !open" type="button">
+        <div class="sb-avatar">{{ current_user.username[0] }}</div>
+        <div style="flex:1;min-width:0;text-align:left;">
+          <div class="sb-uname">{{ current_user.username }}</div>
+          <div class="sb-urole">
+            {% if current_user.role.value == 'admin' %}<span style="color:#999;">管理员</span>{% else %}普通用户{% endif %}
+          </div>
+        </div>
+        <svg width="11" height="11" fill="none" stroke="rgba(255,255,255,.22)" stroke-width="2.5" viewBox="0 0 24 24"
+             style="flex-shrink:0;transition:transform .2s;" :style="open?'transform:rotate(180deg)':''">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+        </svg>
+      </button>
+      <div class="sb-user-menu" x-show="open" x-cloak @click.outside="open=false">
+        <a href="/logout">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+          </svg>
+          退出登录
+        </a>
+      </div>
+    </div>
+    {% endif %}
+
+  </aside>
+  <!-- ╚══ /Sidebar ════════════════════════════════════════════════╝ -->
+
+  <!-- Main -->
+  <div class="akp-main">
+
+    <!-- Top bar -->
+    <header class="akp-topbar">
+      <div>
+        <p class="topbar-title">{% block page_title %}{% endblock %}</p>
+        <p class="topbar-sub">{% block page_subtitle %}{% endblock %}</p>
+      </div>
+      <div style="display:flex;align-items:center;gap:0.75rem;">
+        {% block header_actions %}{% endblock %}
+      </div>
+    </header>
+
+    <!-- Page content -->
+    <div class="akp-content">
+      {% block content %}{% endblock %}
+    </div>
+
+  </div>
+</div>
+</body>
+</html>
