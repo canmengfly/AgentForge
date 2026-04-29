@@ -1,0 +1,412 @@
+{% extends "base.html" %}
+{% block title %}系统设置{% endblock %}
+{% block page_title %}系统设置{% endblock %}
+{% block page_subtitle %}管理嵌入模型、重排序与向量索引{% endblock %}
+
+{% block content %}
+<div x-data="settingsPage()" x-init="init()" style="max-width:820px;">
+
+  <!-- ══ 当前模型信息 ═══════════════════════════════════════════════ -->
+  <div class="card-panel" style="margin-bottom:1.25rem;">
+
+    <!-- 头部 -->
+    <div class="card-panel-head">
+      <p class="card-panel-title">嵌入模型</p>
+      <span style="font-size:11px;background:#f1f5f9;color:#64748b;border-radius:5px;padding:2px 9px;font-weight:500;"
+            x-text="currentModel.lang || '—'"></span>
+    </div>
+
+    <!-- 当前模型条 -->
+    <div style="padding:1rem 1.25rem;display:flex;align-items:center;gap:1.25rem;
+                background:#fafafa;border-bottom:1px solid #f2f2f2;">
+      <div style="width:42px;height:42px;border-radius:10px;background:#111;
+                  display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg width="20" height="20" fill="none" stroke="#fff" stroke-width="1.6" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/>
+        </svg>
+      </div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:700;font-size:14px;color:#111;font-family:ui-monospace,monospace;"
+             x-text="currentModel.name || '—'"></div>
+        <div style="font-size:12px;color:#64748b;margin-top:3px;" x-text="currentModel.desc || ''"></div>
+      </div>
+      <div style="display:flex;gap:2rem;flex-shrink:0;">
+        <div style="text-align:center;">
+          <div style="font-size:10.5px;color:#94a3b8;margin-bottom:2px;">维度</div>
+          <div style="font-size:16px;font-weight:700;color:#111;" x-text="currentModel.dim ?? '—'"></div>
+        </div>
+        <div style="text-align:center;">
+          <div style="font-size:10.5px;color:#94a3b8;margin-bottom:2px;">模型大小</div>
+          <div style="font-size:16px;font-weight:700;color:#111;"
+               x-text="currentModel.size_mb ? currentModel.size_mb + ' MB' : '—'"></div>
+        </div>
+        <div style="text-align:center;">
+          <div style="font-size:10.5px;color:#94a3b8;margin-bottom:2px;">已索引块</div>
+          <div style="font-size:16px;font-weight:700;color:#111;" x-text="totalChunks"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ 选择新模型 ══════════════════════════════════════════════ -->
+    <div style="padding:1.1rem 1.25rem 0;">
+      <p style="font-size:12.5px;font-weight:600;color:#374151;margin-bottom:0.75rem;">切换模型</p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:0.65rem;margin-bottom:1rem;">
+        <template x-for="m in models" :key="m.name">
+          <div class="model-card" :class="selectedModel===m.name ? 'is-selected' : ''"
+               @click="selectedModel = m.name" style="cursor:pointer;">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;">
+              <span style="font-family:ui-monospace,monospace;font-size:11.5px;font-weight:600;
+                           color:#1e293b;line-height:1.4;word-break:break-all;"
+                    x-text="m.name.includes('/') ? m.name.split('/').pop() : m.name"></span>
+              <template x-if="currentModel.name === m.name">
+                <span style="font-size:10px;background:#111;color:#fff;border-radius:4px;
+                             padding:1px 7px;white-space:nowrap;flex-shrink:0;margin-top:1px;">当前</span>
+              </template>
+            </div>
+            <div style="margin-top:5px;font-size:11.5px;color:#64748b;line-height:1.45;"
+                 x-text="m.desc"></div>
+            <div style="margin-top:8px;display:flex;gap:5px;flex-wrap:wrap;">
+              <span class="meta-tag" x-text="m.lang"></span>
+              <span class="meta-tag" x-text="m.dim + ' 维'"></span>
+              <span class="meta-tag" x-text="m.size_mb + ' MB'"></span>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- 警告 + 操作行 -->
+    <div style="padding:0 1.25rem 1.1rem;">
+      <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;
+                  padding:0.7rem 1rem;margin-bottom:0.9rem;">
+        <p style="font-size:12.5px;color:#92400e;line-height:1.6;margin:0;">
+          <strong>注意：</strong>切换模型后，旧向量与新模型不兼容。
+          建议同时重建索引（耗时与数据量成正比），否则搜索质量会下降。
+          切换过程中搜索可能短暂返回空结果。
+        </p>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem;">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;
+                      font-size:13px;color:#374151;user-select:none;">
+          <input type="checkbox" x-model="doReindex"
+                 style="width:15px;height:15px;accent-color:#111;cursor:pointer;" />
+          切换后自动重建向量索引（推荐）
+        </label>
+        <button @click="doSwitch()"
+                :disabled="!selectedModel || selectedModel===currentModel.name || switching"
+                class="button is-primary"
+                style="font-weight:600;font-size:13px;min-width:110px;">
+          <span x-text="switching ? '处理中…' : '开始切换'"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ 重排序模型卡 ════════════════════════════════════════════════ -->
+  <div class="card-panel" style="margin-bottom:1.25rem;">
+
+    <div class="card-panel-head">
+      <p class="card-panel-title">重排序模型 (Cross-Encoder)</p>
+      <span :style="`font-size:11px;border-radius:5px;padding:2px 9px;font-weight:500;
+                     background:${reranker.enabled?'#dcfce7':'#f1f5f9'};
+                     color:${reranker.enabled?'#166534':'#64748b'};`"
+            x-text="reranker.enabled ? '已启用' : '未启用'"></span>
+    </div>
+
+    <!-- 当前状态行 -->
+    <div style="padding:1rem 1.25rem;background:#fafafa;border-bottom:1px solid #f2f2f2;
+                display:flex;align-items:center;gap:1rem;">
+      <div style="width:42px;height:42px;border-radius:10px;background:#111;
+                  display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg width="20" height="20" fill="none" stroke="#fff" stroke-width="1.6" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"/>
+        </svg>
+      </div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:700;font-size:14px;color:#111;font-family:ui-monospace,monospace;"
+             x-text="reranker.model ? reranker.model.split('/').pop() : '未启用'"></div>
+        <div style="font-size:12px;color:#64748b;margin-top:3px;">
+          混合检索时对所有候选结果统一打分，消除向量分与BM25分的量纲差异
+        </div>
+      </div>
+    </div>
+
+    <!-- 模型选择 -->
+    <div style="padding:1.1rem 1.25rem 0;">
+      <p style="font-size:12.5px;font-weight:600;color:#374151;margin-bottom:0.75rem;">选择模型</p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:0.65rem;margin-bottom:1rem;">
+        <template x-for="m in rerankerModels" :key="m.name">
+          <div class="model-card" :class="rerankerSelected===m.name ? 'is-selected' : ''"
+               @click="rerankerSelected = m.name" style="cursor:pointer;">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;">
+              <span style="font-family:ui-monospace,monospace;font-size:11.5px;font-weight:600;
+                           color:#1e293b;line-height:1.4;word-break:break-all;"
+                    x-text="m.name.includes('/') ? m.name.split('/').pop() : m.name"></span>
+              <template x-if="reranker.model === m.name">
+                <span style="font-size:10px;background:#111;color:#fff;border-radius:4px;
+                             padding:1px 7px;white-space:nowrap;flex-shrink:0;margin-top:1px;">当前</span>
+              </template>
+            </div>
+            <div style="margin-top:5px;font-size:11.5px;color:#64748b;" x-text="m.desc"></div>
+            <div style="margin-top:8px;display:flex;gap:5px;flex-wrap:wrap;">
+              <span class="meta-tag" x-text="m.lang"></span>
+              <span class="meta-tag" x-text="m.size_mb + ' MB'"></span>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- 操作行 -->
+    <div style="padding:0 1.25rem 1.1rem;display:flex;align-items:center;
+                justify-content:space-between;flex-wrap:wrap;gap:0.75rem;">
+      <p style="font-size:12px;color:#64748b;margin:0;">
+        首次启用会下载模型权重；切换/禁用无需重建向量索引。
+      </p>
+      <div style="display:flex;gap:0.6rem;">
+        <button @click="doDisableReranker()"
+                :disabled="!reranker.enabled || rerankerLoading"
+                class="button"
+                style="font-size:13px;border:1.5px solid #e2e8f0;">
+          <span x-text="rerankerLoading && !rerankerSelected ? '处理中…' : '禁用'"></span>
+        </button>
+        <button @click="doSwitchReranker()"
+                :disabled="!rerankerSelected || rerankerSelected===reranker.model || rerankerLoading"
+                class="button is-primary"
+                style="font-weight:600;font-size:13px;min-width:110px;">
+          <span x-text="rerankerLoading ? '加载中…' : (reranker.enabled ? '切换模型' : '启用')"></span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 加载中提示 -->
+    <template x-if="rerankerLoading || rerankerError">
+      <div style="padding:0 1.25rem 1rem;">
+        <template x-if="rerankerLoading">
+          <div style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:#64748b;">
+            <div style="width:8px;height:8px;border-radius:50%;background:#f59e0b;" class="dot-pulse"></div>
+            正在下载并加载重排序模型，请稍候…
+          </div>
+        </template>
+        <template x-if="rerankerError">
+          <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:7px;
+                      padding:0.65rem 0.85rem;">
+            <p style="font-size:12px;color:#dc2626;" x-text="rerankerError"></p>
+          </div>
+        </template>
+      </div>
+    </template>
+
+  </div>
+
+  <!-- ══ 重建进度卡 ══════════════════════════════════════════════════ -->
+  <div x-show="status.phase" x-cloak class="card-panel" style="padding:1.1rem 1.25rem;">
+
+    <!-- 状态行 -->
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:0.85rem;">
+      <div :style="`width:10px;height:10px;border-radius:50%;flex-shrink:0;
+                    background:${status.error?'#ef4444':status.phase==='done'?'#22c55e':'#f59e0b'};`"
+           :class="status.running && !status.error ? 'dot-pulse' : ''"></div>
+      <span style="font-size:13.5px;font-weight:600;color:#111;" x-text="phaseLabel()"></span>
+    </div>
+
+    <!-- 下载阶段提示 -->
+    <template x-if="status.phase === 'downloading'">
+      <p style="font-size:12.5px;color:#64748b;margin-bottom:0.6rem;">
+        正在下载模型权重文件，请耐心等待…
+      </p>
+    </template>
+
+    <!-- 重建进度条 -->
+    <template x-if="status.phase === 'reindexing' || status.phase === 'done'">
+      <div>
+        <div style="height:7px;border-radius:99px;background:#f1f5f9;overflow:hidden;margin-bottom:6px;">
+          <div style="height:100%;border-radius:99px;transition:width .4s;"
+               :style="`width:${progress()}%;background:${status.error?'#ef4444':status.phase==='done'?'#22c55e':'#111'}`"></div>
+        </div>
+        <p style="font-size:12px;color:#64748b;" x-text="`${status.done} / ${status.total} 个分块已重建`"></p>
+      </div>
+    </template>
+
+    <!-- 错误 -->
+    <template x-if="status.error">
+      <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:7px;
+                  padding:0.65rem 0.85rem;margin-top:0.65rem;">
+        <p style="font-size:12px;color:#dc2626;word-break:break-all;" x-text="status.error"></p>
+      </div>
+    </template>
+
+  </div>
+
+</div>
+
+<style>
+  .model-card {
+    border: 1.5px solid #e2e8f0; border-radius: 9px;
+    padding: 0.85rem 1rem; background: #fff;
+    transition: border-color .12s, box-shadow .12s;
+  }
+  .model-card:hover { border-color: #94a3b8; }
+  .model-card.is-selected {
+    border-color: #111;
+    box-shadow: 0 0 0 2.5px rgba(0,0,0,.08);
+  }
+
+  .meta-tag {
+    font-size: 10.5px; background: #f1f5f9; color: #475569;
+    border-radius: 4px; padding: 1px 7px;
+  }
+
+  @keyframes dot-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: .35; transform: scale(.8); }
+  }
+  .dot-pulse { animation: dot-pulse 1.4s ease-in-out infinite; }
+</style>
+
+<script>
+function settingsPage() {
+  return {
+    // ── Embedding model ──
+    currentModel: {},
+    models: [],
+    totalChunks: 0,
+    selectedModel: null,
+    doReindex: true,
+    switching: false,
+    status: {},
+    pollTimer: null,
+
+    // ── Reranker ──
+    reranker: { enabled: false, model: null },
+    rerankerModels: [],
+    rerankerSelected: null,
+    rerankerLoading: false,
+    rerankerError: null,
+    rerankerPollTimer: null,
+
+    async init() {
+      await Promise.all([this.load(), this.loadReranker()]);
+      if (this.status.running) this.startPoll();
+      if (this.rerankerLoading) this.startRerankerPoll();
+    },
+
+    // ── Embedding helpers ──
+    async load() {
+      const data = await fetch('/api/admin/embedding').then(r => r.json());
+      this.currentModel = data.current || {};
+      this.models = data.models || [];
+      this.totalChunks = data.total_chunks || 0;
+      this.status = data.reindex || {};
+      if (!this.selectedModel) this.selectedModel = this.currentModel.name;
+    },
+
+    async doSwitch() {
+      if (!this.selectedModel || this.selectedModel === this.currentModel.name || this.switching) return;
+      this.switching = true;
+      const res = await fetch('/api/admin/embedding/switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model_name: this.selectedModel, reindex: this.doReindex }),
+      });
+      if (!res.ok) {
+        const e = await res.json();
+        alert(e.detail || '切换失败');
+        this.switching = false;
+        return;
+      }
+      this.startPoll();
+    },
+
+    startPoll() {
+      if (this.pollTimer) return;
+      this.pollTimer = setInterval(async () => {
+        const s = await fetch('/api/admin/embedding/status').then(r => r.json());
+        this.status = s;
+        if (!s.running) {
+          clearInterval(this.pollTimer);
+          this.pollTimer = null;
+          this.switching = false;
+          await this.load();
+        }
+      }, 1500);
+    },
+
+    phaseLabel() {
+      if (this.status.error) return '出错：' + this.status.error;
+      return {
+        downloading: '正在下载模型…',
+        reindexing:  '正在重建向量索引…',
+        done:        '完成',
+      }[this.status.phase] || '';
+    },
+
+    progress() {
+      if (!this.status.total) return 0;
+      return Math.min(100, Math.round(this.status.done / this.status.total * 100));
+    },
+
+    // ── Reranker helpers ──
+    async loadReranker() {
+      const data = await fetch('/api/admin/reranker').then(r => r.json());
+      this.reranker = { enabled: data.enabled, model: data.model };
+      this.rerankerModels = data.models || [];
+      this.rerankerLoading = data.loading;
+      this.rerankerError = data.error;
+      if (!this.rerankerSelected && data.model) this.rerankerSelected = data.model;
+    },
+
+    async doSwitchReranker() {
+      if (!this.rerankerSelected || this.rerankerSelected === this.reranker.model || this.rerankerLoading) return;
+      this.rerankerLoading = true;
+      this.rerankerError = null;
+      const res = await fetch('/api/admin/reranker/switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model_name: this.rerankerSelected }),
+      });
+      if (!res.ok) {
+        const e = await res.json();
+        this.rerankerError = e.detail || '切换失败';
+        this.rerankerLoading = false;
+        return;
+      }
+      this.startRerankerPoll();
+    },
+
+    async doDisableReranker() {
+      if (!this.reranker.enabled || this.rerankerLoading) return;
+      this.rerankerLoading = true;
+      const res = await fetch('/api/admin/reranker/switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model_name: '' }),
+      });
+      if (!res.ok) {
+        const e = await res.json();
+        this.rerankerError = e.detail || '操作失败';
+      }
+      this.rerankerLoading = false;
+      await this.loadReranker();
+    },
+
+    startRerankerPoll() {
+      if (this.rerankerPollTimer) return;
+      this.rerankerPollTimer = setInterval(async () => {
+        const s = await fetch('/api/admin/reranker/status').then(r => r.json());
+        this.rerankerLoading = s.loading;
+        this.rerankerError = s.error;
+        if (!s.loading) {
+          clearInterval(this.rerankerPollTimer);
+          this.rerankerPollTimer = null;
+          await this.loadReranker();
+        }
+      }, 1500);
+    },
+  };
+}
+</script>
+{% endblock %}

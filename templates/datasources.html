@@ -1,0 +1,1797 @@
+{% extends "base.html" %}
+{% block title %}数据源{% endblock %}
+{% block page_title %}数据源{% endblock %}
+{% block page_subtitle %}统一管理本地文件与外部数据，向量化后统一检索{% endblock %}
+
+{% block content %}
+<div x-data="dataSourcesPage()" x-init="init()">
+
+  <!-- ══ 子导航栏 ══════════════════════════════════════════════════ -->
+  <div class="ds-subnav">
+    <button type="button" @click="section='upload'"
+            :class="section==='upload' ? 'ds-tab is-active' : 'ds-tab'">
+      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+      </svg>
+      手动上传
+    </button>
+    <button type="button" @click="section='external'"
+            :class="section==='external' ? 'ds-tab is-active' : 'ds-tab'">
+      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/>
+      </svg>
+      外部数据源
+      <span x-show="sources.length > 0" x-cloak class="ds-badge" x-text="sources.length"></span>
+    </button>
+  </div>
+
+  <!-- 外部数据源 tab 操作行 -->
+  <div x-show="section==='external'" x-cloak
+       style="display:flex;justify-content:flex-end;margin-bottom:1rem;">
+    <button @click="showAdd=true" class="ds-add-btn">
+      <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+      </svg>
+      添加外部数据源
+    </button>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       TAB: 手动上传
+  ════════════════════════════════════════════════════════════��══ -->
+  <div x-show="section==='upload'" x-cloak>
+    <div class="card-panel" style="max-width:680px;">
+
+      <!-- 文件/文本 sub-tabs -->
+      <div class="tabs" style="padding:0 1.25rem;margin-bottom:0;border-bottom:1px solid #f1f5f9;">
+        <ul>
+          <li :class="uploadTab==='file'?'is-active':''">
+            <a @click="uploadTab='file'" style="font-size:13.5px;gap:7px;padding:.7rem 1rem;">
+              <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+              </svg>
+              文件上传
+            </a>
+          </li>
+          <li :class="uploadTab==='text'?'is-active':''">
+            <a @click="uploadTab='text'" style="font-size:13.5px;gap:7px;padding:.7rem 1rem;">
+              <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+              </svg>
+              文本粘贴
+            </a>
+          </li>
+        </ul>
+      </div>
+
+      <div style="padding:1.25rem 1.4rem;">
+
+        <!-- 集合选择 -->
+        <div class="field" style="margin-bottom:1.2rem;">
+          <label class="label" style="font-size:12.5px;font-weight:600;color:#374151;">存入集合</label>
+          <div class="field has-addons" style="margin:0;">
+            <div class="control is-expanded">
+              <input class="input" type="text" x-model="uploadCollection"
+                     placeholder="default（留空使用默认集合）" />
+            </div>
+            <template x-if="existingCols.length > 0">
+              <div class="control">
+                <div class="select">
+                  <select @change="if($event.target.value) uploadCollection=$event.target.value">
+                    <option value="">已有集合…</option>
+                    <template x-for="c in existingCols" :key="c.name">
+                      <option :value="c.name" x-text="c.name + ' (' + c.count + ' 块)'"></option>
+                    </template>
+                  </select>
+                </div>
+              </div>
+            </template>
+          </div>
+          <p class="help" style="font-size:11.5px;">文档将存入此命名空间，检索时按集合隔离</p>
+        </div>
+
+        <!-- 文件上传 -->
+        <div x-show="uploadTab==='file'">
+          <div class="drop-zone" :class="dragging?'dragging':''"
+               @dragover.prevent="dragging=true"
+               @dragleave.prevent="dragging=false"
+               @drop.prevent="handleDrop($event)"
+               @click="$refs.fileInput.click()">
+            <svg width="40" height="40" fill="none" stroke="#c7d2de" stroke-width="1.3" viewBox="0 0 24 24"
+                 style="margin:0 auto 0.75rem;display:block;">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+            </svg>
+            <p style="color:#334155;font-size:13.5px;font-weight:600;margin-bottom:3px;">拖拽文件到此处，或点击选择</p>
+            <p style="color:#94a3b8;font-size:12px;">PDF · DOCX · TXT · MD · HTML</p>
+            <input x-ref="fileInput" type="file" style="display:none;"
+                   accept=".pdf,.docx,.txt,.md,.html,.htm"
+                   @change="selectedFile=$event.target.files[0]||null" />
+          </div>
+
+          <template x-if="selectedFile">
+            <div style="margin-top:0.8rem;display:flex;align-items:center;gap:10px;padding:0.75rem 1rem;
+                        background:#f8fafc;border:1px solid #e2e8f0;border-radius:9px;">
+              <div style="width:34px;height:34px;border-radius:8px;background:#f0f0f0;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                <svg width="16" height="16" fill="none" stroke="#555" stroke-width="1.8" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+              </div>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:13px;font-weight:500;color:#1e293b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" x-text="selectedFile.name"></div>
+                <div style="font-size:11.5px;color:#94a3b8;" x-text="(selectedFile.size/1024).toFixed(1)+' KB'"></div>
+              </div>
+              <button @click="selectedFile=null;$refs.fileInput.value=''" type="button"
+                      style="background:none;border:none;cursor:pointer;color:#94a3b8;font-size:17px;line-height:1;padding:2px 6px;border-radius:4px;"
+                      onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#94a3b8'">✕</button>
+            </div>
+          </template>
+
+          <button type="button" class="button is-primary is-fullwidth"
+                  style="margin-top:0.85rem;font-weight:600;"
+                  :class="uploading?'is-loading':''"
+                  :disabled="!selectedFile||uploading"
+                  @click="uploadFile()">
+            上传文件
+          </button>
+        </div>
+
+        <!-- 文本粘贴 -->
+        <div x-show="uploadTab==='text'">
+          <div class="field">
+            <label class="label" style="font-size:12.5px;font-weight:600;color:#374151;">
+              文档标题 <span style="color:#ef4444;">*</span>
+            </label>
+            <input class="input" type="text" x-model="textTitle" placeholder="例：2024年Q4产品规划" />
+          </div>
+          <div class="field">
+            <label class="label" style="font-size:12.5px;font-weight:600;color:#374151;">
+              文档内容 <span style="color:#ef4444;">*</span>
+              <span style="float:right;font-weight:400;color:#94a3b8;font-size:11.5px;" x-text="textContent.length+' 字符'"></span>
+            </label>
+            <textarea class="textarea" x-model="textContent" rows="10"
+                      placeholder="粘贴文档全文，系统将自动分块并向量化…"
+                      style="font-size:13.5px;resize:vertical;line-height:1.65;"></textarea>
+          </div>
+          <button type="button" class="button is-primary is-fullwidth"
+                  style="font-weight:600;"
+                  :class="uploading?'is-loading':''"
+                  :disabled="!textTitle.trim()||!textContent.trim()||uploading"
+                  @click="addText()">
+            保存文档
+          </button>
+        </div>
+
+        <!-- 结果提示 -->
+        <template x-if="uploadResult">
+          <div class="notification is-compact"
+               :class="uploadResult.ok?'is-success is-light':'is-danger is-light'"
+               style="margin-top:0.85rem;border-radius:9px;display:flex;align-items:flex-start;gap:10px;">
+            <button class="delete" @click="uploadResult=null"></button>
+            <div>
+              <strong x-text="uploadResult.ok?'上传成功':'上传失败'"></strong><br/>
+              <span style="font-size:13px;" x-text="uploadResult.message"></span>
+            </div>
+          </div>
+        </template>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════��══════
+       TAB: 外部数据源
+  ═══════════════════════════���════════════════════════════════��══ -->
+  <div x-show="section==='external'" x-cloak>
+
+    <!-- 加载中 -->
+    <template x-if="dsLoading">
+      <p style="color:#94a3b8;font-size:13px;padding:0.5rem 0;">加载中…</p>
+    </template>
+
+    <!-- 空状态 -->
+    <template x-if="!dsLoading && sources.length===0">
+      <div style="background:#fff;border:1px dashed #e2e8f0;border-radius:10px;
+                  padding:3.5rem 2rem;text-align:center;">
+        <svg width="44" height="44" fill="none" stroke="#cbd5e1" stroke-width="1.2" viewBox="0 0 24 24"
+             style="margin:0 auto 0.8rem;display:block;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/>
+        </svg>
+        <p style="color:#64748b;font-size:14px;font-weight:500;">暂无外部数据源</p>
+        <p style="color:#94a3b8;font-size:12.5px;margin-top:4px;">点击「添加外部数据源」连接 OSS Bucket 或数据库</p>
+        <button @click="showAdd=true" class="button is-primary" style="margin-top:1.1rem;font-weight:600;">
+          添加外部数据源
+        </button>
+      </div>
+    </template>
+
+    <!-- 数据源卡片 -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:1rem;">
+      <template x-for="ds in sources" :key="ds.id">
+        <div class="card-panel">
+
+          <div style="padding:0.9rem 1.1rem 0.65rem;display:flex;align-items:flex-start;gap:10px;">
+            <div :style="`width:34px;height:34px;border-radius:8px;background:${typeColor(ds.type)};
+                          display:flex;align-items:center;justify-content:center;flex-shrink:0;`">
+              <svg width="15" height="15" fill="none" stroke="#fff" stroke-width="1.8" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/>
+              </svg>
+            </div>
+            <div style="flex:1;min-width:0;">
+              <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
+                <span style="font-weight:600;font-size:13.5px;color:#111;" x-text="ds.name"></span>
+                <span :style="`background:${typeColor(ds.type)};color:#fff;font-size:10px;font-weight:700;
+                               padding:1px 7px;border-radius:99px;letter-spacing:.03em;`"
+                      x-text="ds.type.toUpperCase()"></span>
+                <span :style="`background:${statusBg(ds.status)};color:${statusFg(ds.status)};
+                               font-size:10px;font-weight:600;padding:1px 7px;border-radius:99px;`"
+                      x-text="statusLabel(ds.status)"></span>
+              </div>
+              <div style="font-size:11.5px;color:#94a3b8;margin-top:2px;">
+                集合：<span style="font-family:monospace;color:#64748b;" x-text="ds.collection"></span>
+              </div>
+            </div>
+          </div>
+
+          <div style="padding:0 1.1rem 0.65rem;display:flex;gap:1.5rem;flex-wrap:wrap;">
+            <div>
+              <div style="font-size:10.5px;color:#94a3b8;">文档数</div>
+              <div style="font-size:17px;font-weight:700;color:#111;" x-text="ds.doc_count"></div>
+            </div>
+            <div>
+              <div style="font-size:10.5px;color:#94a3b8;">上次同步</div>
+              <div style="font-size:12px;color:#475569;margin-top:1px;"
+                   x-text="ds.last_synced_at ? fmtDate(ds.last_synced_at) : '从未'"></div>
+            </div>
+            <template x-if="ds.sync_interval">
+              <div>
+                <div style="font-size:10.5px;color:#94a3b8;">定时同步</div>
+                <div style="font-size:12px;color:#475569;margin-top:1px;" x-text="fmtInterval(ds.sync_interval)"></div>
+              </div>
+            </template>
+            <template x-if="ds.next_run_at">
+              <div>
+                <div style="font-size:10.5px;color:#94a3b8;">下次同步</div>
+                <div style="font-size:12px;color:#0ea5e9;margin-top:1px;" x-text="fmtDate(ds.next_run_at)"></div>
+              </div>
+            </template>
+          </div>
+
+          <div style="padding:0.45rem 1.1rem;border-top:1px solid #f2f2f2;border-bottom:1px solid #f2f2f2;background:#fafafa;">
+            <template x-if="ds.type==='oss'">
+              <span style="font-size:11.5px;color:#64748b;font-family:monospace;"
+                    x-text="`${ds.config.bucket||'—'}${ds.config.prefix?' / '+ds.config.prefix:''} @ ${ds.config.endpoint||''}`"></span>
+            </template>
+            <template x-if="ds.type==='mysql'||ds.type==='postgres'">
+              <span style="font-size:11.5px;color:#64748b;font-family:monospace;"
+                    x-text="`${ds.config.username}@${ds.config.host}:${ds.config.port}/${ds.config.database}${ds.config.tables&&ds.config.tables.length?' ['+ds.config.tables.join(', ')+']':''}`"></span>
+            </template>
+            <template x-if="ds.type==='feishu'">
+              <span style="font-size:11.5px;color:#64748b;font-family:monospace;"
+                    x-text="`AppID: ${ds.config.app_id||'—'}${ds.config.space_id?' · Space: '+ds.config.space_id:' · 全部知识空间'}`"></span>
+            </template>
+            <template x-if="ds.type==='dingtalk'">
+              <span style="font-size:11.5px;color:#64748b;font-family:monospace;"
+                    x-text="`AppKey: ${ds.config.app_key||'—'}${ds.config.workspace_id?' · Workspace: '+ds.config.workspace_id:' · 全部知识库'}`"></span>
+            </template>
+            <template x-if="ds.type==='tencent_docs'">
+              <span style="font-size:11.5px;color:#64748b;font-family:monospace;"
+                    x-text="`ClientID: ${ds.config.client_id||'—'}${ds.config.folder_id?' · 文件夹: '+ds.config.folder_id:' · 根目录'}`"></span>
+            </template>
+            <template x-if="ds.type==='s3'">
+              <span style="font-size:11.5px;color:#64748b;font-family:monospace;"
+                    x-text="`s3://${ds.config.bucket||'—'}${ds.config.prefix?'/'+ds.config.prefix:''} (${ds.config.region||'us-east-1'})${ds.config.endpoint_url?' @ '+ds.config.endpoint_url:''}`"></span>
+            </template>
+            <template x-if="ds.type==='doris'">
+              <span style="font-size:11.5px;color:#64748b;font-family:monospace;"
+                    x-text="`${ds.config.username}@${ds.config.host}:${ds.config.port||9030}/${ds.config.database}`"></span>
+            </template>
+            <template x-if="ds.type==='clickhouse'">
+              <span style="font-size:11.5px;color:#64748b;font-family:monospace;"
+                    x-text="`${ds.config.username||'default'}@${ds.config.host}:${ds.config.port||8123}/${ds.config.database}${ds.config.tables&&ds.config.tables.length?' ['+ds.config.tables.join(', ')+']':''}`"></span>
+            </template>
+            <template x-if="ds.type==='hive'">
+              <span style="font-size:11.5px;color:#64748b;font-family:monospace;"
+                    x-text="`${ds.config.host}:${ds.config.port||10000}/${ds.config.database} (${ds.config.auth||'NOSASL'})`"></span>
+            </template>
+            <template x-if="ds.type==='elasticsearch'">
+              <span style="font-size:11.5px;color:#64748b;font-family:monospace;"
+                    x-text="`${Array.isArray(ds.config.hosts)?ds.config.hosts.join(','):ds.config.hosts||'—'} / ${ds.config.index||'—'}`"></span>
+            </template>
+            <template x-if="ds.type==='mongodb'">
+              <span style="font-size:11.5px;color:#64748b;font-family:monospace;"
+                    x-text="`${ds.config.database||'—'}${ds.config.collections&&ds.config.collections.length?' ['+ds.config.collections.join(', ')+']':' · 全部集合'}`"></span>
+            </template>
+            <template x-if="ds.type==='tencent_cos'">
+              <span style="font-size:11.5px;color:#64748b;font-family:monospace;"
+                    x-text="`cos://${ds.config.bucket||'—'}${ds.config.prefix?'/'+ds.config.prefix:''} (${ds.config.region||'—'})`"></span>
+            </template>
+            <template x-if="ds.type==='huawei_obs'">
+              <span style="font-size:11.5px;color:#64748b;font-family:monospace;"
+                    x-text="`obs://${ds.config.bucket||'—'}${ds.config.prefix?'/'+ds.config.prefix:''}`"></span>
+            </template>
+            <template x-if="ds.type==='oracle'">
+              <span style="font-size:11.5px;color:#64748b;font-family:monospace;"
+                    x-text="`${ds.config.username}@${ds.config.host}:${ds.config.port||1521}/${ds.config.service_name||ds.config.sid||'—'}`"></span>
+            </template>
+            <template x-if="ds.type==='sqlserver'">
+              <span style="font-size:11.5px;color:#64748b;font-family:monospace;"
+                    x-text="`${ds.config.username}@${ds.config.host}:${ds.config.port||1433}/${ds.config.database} [${ds.config.schema||'dbo'}]`"></span>
+            </template>
+            <template x-if="ds.type==='tidb'">
+              <span style="font-size:11.5px;color:#64748b;font-family:monospace;"
+                    x-text="`${ds.config.username}@${ds.config.host}:${ds.config.port||4000}/${ds.config.database}`"></span>
+            </template>
+            <template x-if="ds.type==='oceanbase'">
+              <span style="font-size:11.5px;color:#64748b;font-family:monospace;"
+                    x-text="`${ds.config.username}@${ds.config.host}:${ds.config.port||2881}/${ds.config.database}`"></span>
+            </template>
+            <template x-if="ds.type==='snowflake'">
+              <span style="font-size:11.5px;color:#64748b;font-family:monospace;"
+                    x-text="`${ds.config.account}/${ds.config.database}.${ds.config.schema||'PUBLIC'}`"></span>
+            </template>
+            <template x-if="ds.type==='confluence'">
+              <span style="font-size:11.5px;color:#64748b;font-family:monospace;"
+                    x-text="`${ds.config.base_url||'—'}${ds.config.space_keys&&ds.config.space_keys.length?' ['+ds.config.space_keys.join(', ')+']':' · 全部 Space'}`"></span>
+            </template>
+            <template x-if="ds.type==='notion'">
+              <span style="font-size:11.5px;color:#64748b;font-family:monospace;"
+                    x-text="ds.config.database_ids&&ds.config.database_ids.length?`Databases: ${ds.config.database_ids.join(', ')}`:'全部可访问页面'"></span>
+            </template>
+            <template x-if="ds.type==='yuque'">
+              <span style="font-size:11.5px;color:#64748b;font-family:monospace;"
+                    x-text="`${ds.config.base_url||'yuque.com'} · ${ds.config.namespace||'全部知识库'}`"></span>
+            </template>
+            <template x-if="ds.type==='github'">
+              <span style="font-size:11.5px;color:#64748b;font-family:monospace;"
+                    x-text="`${Array.isArray(ds.config.repos)?ds.config.repos.join(', '):ds.config.repos||'—'} @ ${ds.config.branch||'main'}`"></span>
+            </template>
+            <template x-if="ds.type==='gitlab'">
+              <span style="font-size:11.5px;color:#64748b;font-family:monospace;"
+                    x-text="`${Array.isArray(ds.config.projects)?ds.config.projects.join(', '):ds.config.projects||'—'} @ ${ds.config.branch||'main'}`"></span>
+            </template>
+            <template x-if="ds.type==='sharepoint'">
+              <span style="font-size:11.5px;color:#64748b;font-family:monospace;"
+                    x-text="`${ds.config.site_url||'—'}${ds.config.folder_path?' / '+ds.config.folder_path:''}`"></span>
+            </template>
+            <template x-if="ds.type==='google_drive'">
+              <span style="font-size:11.5px;color:#64748b;font-family:monospace;"
+                    x-text="ds.config.folder_id?`folder: ${ds.config.folder_id}`:'My Drive (所有共享文件)'"></span>
+            </template>
+          </div>
+
+          <template x-if="ds.last_error">
+            <div style="padding:0.45rem 1.1rem;background:#fef2f2;border-bottom:1px solid #fecaca;">
+              <p style="font-size:11px;color:#dc2626;line-height:1.4;" x-text="ds.last_error"></p>
+            </div>
+          </template>
+
+          <div style="padding:0.65rem 1.1rem;display:flex;gap:0.4rem;flex-wrap:wrap;">
+            <button @click="testConn(ds)" :disabled="ds.status==='syncing'"
+                    class="button is-small" style="font-size:12px;gap:4px;">
+              <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              测试
+            </button>
+            <button @click="syncDs(ds)" :disabled="ds.status==='syncing'"
+                    class="button is-small" style="font-size:12px;gap:4px;">
+              <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"
+                   :style="ds.status==='syncing'?'animation:spin 1s linear infinite':''">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+              </svg>
+              <span x-text="ds.status==='syncing'?'同步中…':'全量同步'"></span>
+            </button>
+            <button @click="openSchedule(ds)"
+                    class="button is-small" style="font-size:12px;gap:4px;"
+                    :style="ds.sync_interval?'border-color:#0ea5e9;color:#0ea5e9;':''">
+              <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              <span x-text="ds.sync_interval ? fmtInterval(ds.sync_interval) : '定时同步'"></span>
+            </button>
+            <div style="flex:1;"></div>
+            <button @click="deleteDs(ds)" :disabled="ds.status==='syncing'"
+                    class="icon-btn" title="删除">
+              <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+            </button>
+          </div>
+
+        </div>
+      </template>
+    </div>
+  </div>
+
+  <!-- ── Toast ────────────────────────────────────────────────────── -->
+  <div x-show="toast.show" x-cloak
+       :style="`position:fixed;bottom:1.5rem;right:1.5rem;z-index:999;
+                background:${toast.ok?'#111':'#dc2626'};color:#fff;
+                padding:0.65rem 1rem;border-radius:8px;font-size:13px;font-weight:500;
+                box-shadow:0 4px 18px rgba(0,0,0,.18);max-width:320px;`"
+       x-text="toast.msg">
+  </div>
+
+  <!-- ══ 定时同步 Modal ════════════════════════════════════════════ -->
+  <div x-show="showSchedule" x-cloak class="ds-modal-overlay">
+    <div @click.stop
+         style="background:#fff;border-radius:12px;width:100%;max-width:380px;
+                box-shadow:0 20px 60px rgba(0,0,0,.22);">
+      <div style="padding:1rem 1.3rem 0.8rem;border-bottom:1px solid #f2f2f2;
+                  display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <span style="font-weight:700;font-size:14px;">定时增量同步</span>
+          <span style="font-size:12px;color:#94a3b8;margin-left:6px;" x-text="scheduleDs?.name"></span>
+        </div>
+        <button @click="showSchedule=false"
+                style="background:none;border:none;cursor:pointer;color:#94a3b8;padding:4px;">
+          <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div style="padding:1.1rem 1.3rem;display:flex;flex-direction:column;gap:0.9rem;">
+        <div class="field">
+          <label class="label" style="font-size:12.5px;">同步间隔</label>
+          <div class="select is-fullwidth">
+            <select x-model="scheduleForm.interval">
+              <option value="">关闭定时同步</option>
+              <option value="30">每 30 分钟</option>
+              <option value="60">每 1 小时</option>
+              <option value="360">每 6 小时</option>
+              <option value="720">每 12 小时</option>
+              <option value="1440">每 24 小时</option>
+            </select>
+          </div>
+        </div>
+        <div x-show="scheduleForm.interval"
+             style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:7px;padding:0.65rem 0.85rem;">
+          <p style="font-size:12px;color:#0369a1;line-height:1.55;">
+            <strong>增量模式：</strong>每次仅拉取上次同步后新增的数据。
+            <template x-if="scheduleDs?.type!=='oss'">
+              <span>SQL 数据源需配置「增量字段」才能真正增量，否则将全表重新扫描。</span>
+            </template>
+          </p>
+        </div>
+      </div>
+      <div style="padding:0.75rem 1.3rem;border-top:1px solid #f2f2f2;display:flex;gap:0.5rem;justify-content:flex-end;">
+        <button @click="showSchedule=false" class="button" style="font-size:13px;">取消</button>
+        <button @click="saveSchedule()" class="button is-primary" style="font-size:13px;font-weight:600;">
+          保存
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ 添加外部数据源 Modal ═══════════════════════════════════════ -->
+  <div x-show="showAdd" x-cloak class="ds-modal-overlay">
+    <div @click.stop
+         style="background:#fff;border-radius:12px;width:100%;max-width:500px;
+                max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.22);">
+
+      <div style="padding:1rem 1.3rem 0.8rem;border-bottom:1px solid #f2f2f2;
+                  display:flex;align-items:center;justify-content:space-between;">
+        <span style="font-weight:700;font-size:14.5px;">添加外部数据源</span>
+        <button @click="showAdd=false;resetDsForm()"
+                style="background:none;border:none;cursor:pointer;color:#94a3b8;padding:4px;">
+          <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+
+      <form @submit.prevent="createDs()"
+            style="padding:1.1rem 1.3rem;display:flex;flex-direction:column;gap:0.8rem;">
+
+        <div class="field">
+          <label class="label" style="font-size:12.5px;">名称</label>
+          <input class="input" x-model="dsForm.name" placeholder="生产 MySQL / 文档 OSS" required />
+        </div>
+
+        <div class="field">
+          <label class="label" style="font-size:12.5px;">类型</label>
+          <div class="select is-fullwidth">
+            <select x-model="dsForm.type">
+              <optgroup label="对象存储">
+                <option value="oss">阿里云 OSS</option>
+                <option value="s3">AWS S3 / MinIO</option>
+                <option value="tencent_cos">腾讯云 COS</option>
+                <option value="huawei_obs">华为云 OBS</option>
+              </optgroup>
+              <optgroup label="关系型数据库">
+                <option value="mysql">MySQL</option>
+                <option value="postgres">PostgreSQL</option>
+                <option value="oracle">Oracle</option>
+                <option value="sqlserver">SQL Server</option>
+                <option value="tidb">TiDB</option>
+                <option value="oceanbase">OceanBase</option>
+              </optgroup>
+              <optgroup label="OLAP / 数仓">
+                <option value="doris">Apache Doris</option>
+                <option value="clickhouse">ClickHouse</option>
+                <option value="hive">Apache Hive</option>
+                <option value="snowflake">Snowflake</option>
+              </optgroup>
+              <optgroup label="搜索引擎 / NoSQL">
+                <option value="elasticsearch">Elasticsearch</option>
+                <option value="mongodb">MongoDB</option>
+              </optgroup>
+              <optgroup label="知识库 / 文档平台">
+                <option value="confluence">Confluence</option>
+                <option value="notion">Notion</option>
+                <option value="yuque">语雀</option>
+                <option value="feishu">飞书文档</option>
+                <option value="dingtalk">钉钉文档</option>
+                <option value="tencent_docs">腾讯文档</option>
+              </optgroup>
+              <optgroup label="代码平台">
+                <option value="github">GitHub</option>
+                <option value="gitlab">GitLab</option>
+              </optgroup>
+              <optgroup label="企业云盘">
+                <option value="sharepoint">SharePoint / OneDrive</option>
+                <option value="google_drive">Google Drive</option>
+              </optgroup>
+            </select>
+          </div>
+        </div>
+
+        <!-- OSS -->
+        <template x-if="dsForm.type==='oss'">
+          <div style="display:flex;flex-direction:column;gap:0.7rem;">
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">Endpoint</label>
+              <input class="input" x-model="dsForm.cfg.endpoint" placeholder="oss-cn-hangzhou.aliyuncs.com" />
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">Access Key ID</label>
+                <input class="input" x-model="dsForm.cfg.access_key_id" placeholder="LTAI5t…" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">Access Key Secret</label>
+                <input class="input" type="password" x-model="dsForm.cfg.access_key_secret" placeholder="••••••••" />
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">Bucket</label>
+                <input class="input" x-model="dsForm.cfg.bucket" placeholder="my-bucket" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">前缀（可选）</label>
+                <input class="input" x-model="dsForm.cfg.prefix" placeholder="docs/" />
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- 飞书文档 -->
+        <template x-if="dsForm.type==='feishu'">
+          <div style="display:flex;flex-direction:column;gap:0.7rem;">
+            <div style="background:#f0f7ff;border:1px solid #bfdbfe;border-radius:7px;padding:0.65rem 0.85rem;">
+              <p style="font-size:12px;color:#1d4ed8;line-height:1.55;margin:0;">
+                需在飞书开放平台为应用开启 <code>wiki:wiki:readonly</code> 和 <code>docx:document:readonly</code> 权限，并将应用加入对应知识空间。
+              </p>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">App ID</label>
+                <input class="input" x-model="dsForm.cfg.app_id" placeholder="cli_xxxxxxxxxx" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">App Secret</label>
+                <input class="input" type="password" x-model="dsForm.cfg.app_secret" placeholder="••••••••" />
+              </div>
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">
+                知识空间 ID
+                <span style="color:#94a3b8;font-weight:400;">（可选，留空同步全部 Space）</span>
+              </label>
+              <input class="input" x-model="dsForm.cfg.space_id"
+                     placeholder="从飞书知识空间 URL 中获取，如 7xxxxxxxxxxxxxxxx" />
+            </div>
+          </div>
+        </template>
+
+        <!-- 钉钉文档 -->
+        <template x-if="dsForm.type==='dingtalk'">
+          <div style="display:flex;flex-direction:column;gap:0.7rem;">
+            <div style="background:#f0f7ff;border:1px solid #bfdbfe;border-radius:7px;padding:0.65rem 0.85rem;">
+              <p style="font-size:12px;color:#1d4ed8;line-height:1.55;margin:0;">
+                需在钉钉开放平台为应用开启 <code>doc:doc</code> 权限，并通过企业内部应用方式部署。
+              </p>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">App Key</label>
+                <input class="input" x-model="dsForm.cfg.app_key" placeholder="dingxxxxxxxxxx" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">App Secret</label>
+                <input class="input" type="password" x-model="dsForm.cfg.app_secret" placeholder="••••••••" />
+              </div>
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">
+                知识库 Workspace ID
+                <span style="color:#94a3b8;font-weight:400;">（可选，留空同步全部）</span>
+              </label>
+              <input class="input" x-model="dsForm.cfg.workspace_id"
+                     placeholder="从钉钉文档管理后台获取" />
+            </div>
+          </div>
+        </template>
+
+        <!-- 腾讯文档 -->
+        <template x-if="dsForm.type==='tencent_docs'">
+          <div style="display:flex;flex-direction:column;gap:0.7rem;">
+            <div style="background:#f0f7ff;border:1px solid #bfdbfe;border-radius:7px;padding:0.65rem 0.85rem;">
+              <p style="font-size:12px;color:#1d4ed8;line-height:1.55;margin:0;">
+                腾讯文档采用 OAuth2 用户授权。请在
+                <a href="https://docs.qq.com/open/wiki/" target="_blank" style="color:#2563eb;">开放平台</a>
+                完成授权后，将 Access Token 填入下方。提供 Refresh Token 可自动续期。
+              </p>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">Client ID</label>
+                <input class="input" x-model="dsForm.cfg.client_id" placeholder="应用 Client ID" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">Client Secret</label>
+                <input class="input" type="password" x-model="dsForm.cfg.client_secret" placeholder="••••••••" />
+              </div>
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">Access Token <span style="color:#ef4444;">*</span></label>
+              <input class="input" x-model="dsForm.cfg.access_token" placeholder="通过 OAuth2 授权获取" />
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">
+                Refresh Token
+                <span style="color:#94a3b8;font-weight:400;">（可选，用于自动续期）</span>
+              </label>
+              <input class="input" x-model="dsForm.cfg.refresh_token" placeholder="（可选）" />
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">
+                文件夹 ID
+                <span style="color:#94a3b8;font-weight:400;">（可选，留空同步根目录全部文档）</span>
+              </label>
+              <input class="input" x-model="dsForm.cfg.folder_id" placeholder="（可选）" />
+            </div>
+          </div>
+        </template>
+
+        <!-- MySQL / PostgreSQL -->
+        <template x-if="dsForm.type==='mysql'||dsForm.type==='postgres'">
+          <div style="display:flex;flex-direction:column;gap:0.7rem;">
+            <div style="display:grid;grid-template-columns:3fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">主机</label>
+                <input class="input" x-model="dsForm.cfg.host" placeholder="127.0.0.1" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">端口</label>
+                <input class="input" type="number" x-model="dsForm.cfg.port"
+                       :placeholder="dsForm.type==='mysql'?'3306':'5432'" />
+              </div>
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">数据库名</label>
+              <input class="input" x-model="dsForm.cfg.database" placeholder="my_database" />
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">用户名</label>
+                <input class="input" x-model="dsForm.cfg.username" placeholder="root" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">密码</label>
+                <input class="input" type="password" x-model="dsForm.cfg.password" placeholder="••••••••" />
+              </div>
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">同步的表（逗号分隔，留空=全部）</label>
+              <input class="input" x-model="dsForm.cfg.tables" placeholder="users, orders, products" />
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">
+                  增量字段
+                  <span style="color:#94a3b8;font-weight:400;">（可选，如 id / created_at）</span>
+                </label>
+                <input class="input" x-model="dsForm.cfg.watermark_col" placeholder="created_at" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">每表最大行数</label>
+                <input class="input" type="number" x-model="dsForm.cfg.row_limit" placeholder="5000" />
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- 腾讯云 COS -->
+        <template x-if="dsForm.type==='tencent_cos'">
+          <div style="display:flex;flex-direction:column;gap:0.7rem;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">SecretId</label>
+                <input class="input" x-model="dsForm.cfg.secret_id" placeholder="AKIDxxxxxxxx" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">SecretKey</label>
+                <input class="input" type="password" x-model="dsForm.cfg.secret_key" placeholder="••••••••" />
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">Bucket（名称-APPID）</label>
+                <input class="input" x-model="dsForm.cfg.bucket" placeholder="mybucket-1234567890" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">Region</label>
+                <input class="input" x-model="dsForm.cfg.region" placeholder="ap-beijing" />
+              </div>
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">前缀（可选）</label>
+              <input class="input" x-model="dsForm.cfg.prefix" placeholder="docs/" />
+            </div>
+          </div>
+        </template>
+
+        <!-- 华为云 OBS -->
+        <template x-if="dsForm.type==='huawei_obs'">
+          <div style="display:flex;flex-direction:column;gap:0.7rem;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">Access Key ID</label>
+                <input class="input" x-model="dsForm.cfg.access_key_id" placeholder="AK..." />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">Secret Access Key</label>
+                <input class="input" type="password" x-model="dsForm.cfg.secret_access_key" placeholder="••••••••" />
+              </div>
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">Endpoint</label>
+              <input class="input" x-model="dsForm.cfg.endpoint" placeholder="https://obs.cn-north-4.myhuaweicloud.com" />
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">Bucket</label>
+                <input class="input" x-model="dsForm.cfg.bucket" placeholder="my-bucket" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">前缀（可选）</label>
+                <input class="input" x-model="dsForm.cfg.prefix" placeholder="docs/" />
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- AWS S3 / MinIO -->
+        <template x-if="dsForm.type==='s3'">
+          <div style="display:flex;flex-direction:column;gap:0.7rem;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">Access Key ID</label>
+                <input class="input" x-model="dsForm.cfg.access_key_id" placeholder="AKIAIOSFODNN7EXAMPLE" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">Secret Access Key</label>
+                <input class="input" type="password" x-model="dsForm.cfg.secret_access_key" placeholder="••••••••" />
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">Bucket</label>
+                <input class="input" x-model="dsForm.cfg.bucket" placeholder="my-bucket" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">Region</label>
+                <input class="input" x-model="dsForm.cfg.region" placeholder="us-east-1" />
+              </div>
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">
+                前缀（可选）
+              </label>
+              <input class="input" x-model="dsForm.cfg.prefix" placeholder="docs/" />
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">
+                自定义 Endpoint
+                <span style="color:#94a3b8;font-weight:400;">（MinIO 等 S3 兼容服务）</span>
+              </label>
+              <input class="input" x-model="dsForm.cfg.endpoint_url" placeholder="http://minio:9000" />
+            </div>
+          </div>
+        </template>
+
+        <!-- Oracle -->
+        <template x-if="dsForm.type==='oracle'">
+          <div style="display:flex;flex-direction:column;gap:0.7rem;">
+            <div style="display:grid;grid-template-columns:3fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">主机</label>
+                <input class="input" x-model="dsForm.cfg.host" placeholder="127.0.0.1" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">端口</label>
+                <input class="input" type="number" x-model="dsForm.cfg.port" placeholder="1521" />
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">Service Name</label>
+                <input class="input" x-model="dsForm.cfg.service_name" placeholder="ORCL" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">SID（可选，与 Service Name 二选一）</label>
+                <input class="input" x-model="dsForm.cfg.sid" placeholder="orcl" />
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">用户名</label>
+                <input class="input" x-model="dsForm.cfg.username" placeholder="scott" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">密码</label>
+                <input class="input" type="password" x-model="dsForm.cfg.password" placeholder="••••••••" />
+              </div>
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">同步的表（逗号分隔，留空=全部）</label>
+              <input class="input" x-model="dsForm.cfg.tables" placeholder="EMPLOYEES, ORDERS" />
+            </div>
+          </div>
+        </template>
+
+        <!-- SQL Server -->
+        <template x-if="dsForm.type==='sqlserver'">
+          <div style="display:flex;flex-direction:column;gap:0.7rem;">
+            <div style="display:grid;grid-template-columns:3fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">主机</label>
+                <input class="input" x-model="dsForm.cfg.host" placeholder="127.0.0.1" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">端口</label>
+                <input class="input" type="number" x-model="dsForm.cfg.port" placeholder="1433" />
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">数据库名</label>
+                <input class="input" x-model="dsForm.cfg.database" placeholder="AdventureWorks" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">Schema</label>
+                <input class="input" x-model="dsForm.cfg.schema" placeholder="dbo" />
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">用户名</label>
+                <input class="input" x-model="dsForm.cfg.username" placeholder="sa" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">密码</label>
+                <input class="input" type="password" x-model="dsForm.cfg.password" placeholder="••••••••" />
+              </div>
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">同步的表（逗号分隔，留空=全部）</label>
+              <input class="input" x-model="dsForm.cfg.tables" placeholder="Customer, Orders" />
+            </div>
+          </div>
+        </template>
+
+        <!-- TiDB / OceanBase（MySQL 兼容） -->
+        <template x-if="dsForm.type==='tidb'||dsForm.type==='oceanbase'">
+          <div style="display:flex;flex-direction:column;gap:0.7rem;">
+            <div style="display:grid;grid-template-columns:3fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">主机</label>
+                <input class="input" x-model="dsForm.cfg.host" placeholder="127.0.0.1" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">端口</label>
+                <input class="input" type="number" x-model="dsForm.cfg.port"
+                       :placeholder="dsForm.type==='tidb'?'4000':'2881'" />
+              </div>
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">数据库名</label>
+              <input class="input" x-model="dsForm.cfg.database" placeholder="test" />
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">用户名</label>
+                <input class="input" x-model="dsForm.cfg.username" placeholder="root" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">密码</label>
+                <input class="input" type="password" x-model="dsForm.cfg.password" placeholder="••••••••" />
+              </div>
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">同步的表（逗号分隔，留空=全部）</label>
+              <input class="input" x-model="dsForm.cfg.tables" placeholder="users, orders" />
+            </div>
+          </div>
+        </template>
+
+        <!-- Snowflake -->
+        <template x-if="dsForm.type==='snowflake'">
+          <div style="display:flex;flex-direction:column;gap:0.7rem;">
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">Account</label>
+              <input class="input" x-model="dsForm.cfg.account" placeholder="myorg-myaccount" />
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">用户名</label>
+                <input class="input" x-model="dsForm.cfg.user" placeholder="MYUSER" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">密码</label>
+                <input class="input" type="password" x-model="dsForm.cfg.password" placeholder="••••••••" />
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">Database</label>
+                <input class="input" x-model="dsForm.cfg.database" placeholder="MY_DB" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">Schema</label>
+                <input class="input" x-model="dsForm.cfg.schema" placeholder="PUBLIC" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">Warehouse（可选）</label>
+                <input class="input" x-model="dsForm.cfg.warehouse" placeholder="COMPUTE_WH" />
+              </div>
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">同步的表（逗号分隔，留空=全部）</label>
+              <input class="input" x-model="dsForm.cfg.tables" placeholder="ORDERS, CUSTOMERS" />
+            </div>
+          </div>
+        </template>
+
+        <!-- Confluence -->
+        <template x-if="dsForm.type==='confluence'">
+          <div style="display:flex;flex-direction:column;gap:0.7rem;">
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">Base URL</label>
+              <input class="input" x-model="dsForm.cfg.base_url" placeholder="https://mycompany.atlassian.net" />
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">用户名（邮箱）</label>
+                <input class="input" x-model="dsForm.cfg.username" placeholder="user@company.com" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">API Token</label>
+                <input class="input" type="password" x-model="dsForm.cfg.api_token" placeholder="••••••••" />
+              </div>
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">
+                Space Keys（逗号分隔）
+                <span style="color:#94a3b8;font-weight:400;">（留空=全部 Space）</span>
+              </label>
+              <input class="input" x-model="dsForm.cfg.space_keys" placeholder="ENG, WIKI, DOC" />
+            </div>
+          </div>
+        </template>
+
+        <!-- Notion -->
+        <template x-if="dsForm.type==='notion'">
+          <div style="display:flex;flex-direction:column;gap:0.7rem;">
+            <div style="background:#f0f7ff;border:1px solid #bfdbfe;border-radius:7px;padding:0.65rem 0.85rem;">
+              <p style="font-size:12px;color:#1d4ed8;line-height:1.55;margin:0;">
+                在 Notion 设置 → 集成 中创建 Internal Integration，复制 Secret Token。需将集成添加到要同步的页面/数据库。
+              </p>
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">Integration Token</label>
+              <input class="input" type="password" x-model="dsForm.cfg.token" placeholder="secret_xxxxxxxxxxxxxxxx" />
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">
+                Database IDs（逗号分隔）
+                <span style="color:#94a3b8;font-weight:400;">（可选，留空搜索所有可访问页面）</span>
+              </label>
+              <input class="input" x-model="dsForm.cfg.database_ids" placeholder="abc123, def456" />
+            </div>
+          </div>
+        </template>
+
+        <!-- 语雀 -->
+        <template x-if="dsForm.type==='yuque'">
+          <div style="display:flex;flex-direction:column;gap:0.7rem;">
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">API Token</label>
+              <input class="input" type="password" x-model="dsForm.cfg.token" placeholder="从语雀个人设置 → Token 获取" />
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">
+                知识库 Namespace
+                <span style="color:#94a3b8;font-weight:400;">（可选，如 user/repo，留空同步全部）</span>
+              </label>
+              <input class="input" x-model="dsForm.cfg.namespace" placeholder="myteam/engineering-wiki" />
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">
+                Base URL
+                <span style="color:#94a3b8;font-weight:400;">（私有部署可修改）</span>
+              </label>
+              <input class="input" x-model="dsForm.cfg.base_url" placeholder="https://www.yuque.com" />
+            </div>
+          </div>
+        </template>
+
+        <!-- GitHub -->
+        <template x-if="dsForm.type==='github'">
+          <div style="display:flex;flex-direction:column;gap:0.7rem;">
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">Personal Access Token</label>
+              <input class="input" type="password" x-model="dsForm.cfg.token" placeholder="github_pat_xxxxxxxx" />
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">仓库（逗号分隔，格式 owner/repo）</label>
+              <input class="input" x-model="dsForm.cfg.repos" placeholder="myorg/docs, myorg/wiki" />
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">Branch</label>
+                <input class="input" x-model="dsForm.cfg.branch" placeholder="main" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">路径前缀（可选）</label>
+                <input class="input" x-model="dsForm.cfg.path_prefix" placeholder="docs/" />
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- GitLab -->
+        <template x-if="dsForm.type==='gitlab'">
+          <div style="display:flex;flex-direction:column;gap:0.7rem;">
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">Personal Access Token</label>
+              <input class="input" type="password" x-model="dsForm.cfg.token" placeholder="glpat-xxxxxxxx" />
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">项目（逗号分隔，格式 group/project 或 ID）</label>
+              <input class="input" x-model="dsForm.cfg.projects" placeholder="mygroup/docs, mygroup/wiki" />
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">Branch</label>
+                <input class="input" x-model="dsForm.cfg.branch" placeholder="main" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">
+                  GitLab URL
+                  <span style="color:#94a3b8;font-weight:400;">（私有部署）</span>
+                </label>
+                <input class="input" x-model="dsForm.cfg.base_url" placeholder="https://gitlab.com" />
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- SharePoint / OneDrive -->
+        <template x-if="dsForm.type==='sharepoint'">
+          <div style="display:flex;flex-direction:column;gap:0.7rem;">
+            <div style="background:#f0f7ff;border:1px solid #bfdbfe;border-radius:7px;padding:0.65rem 0.85rem;">
+              <p style="font-size:12px;color:#1d4ed8;line-height:1.55;margin:0;">
+                需在 Azure 应用注册中授予 <code>Sites.Read.All</code> 权限，并完成管理员同意。
+              </p>
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">Tenant ID</label>
+              <input class="input" x-model="dsForm.cfg.tenant_id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">Client ID</label>
+                <input class="input" x-model="dsForm.cfg.client_id" placeholder="应用（客户端）ID" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">Client Secret</label>
+                <input class="input" type="password" x-model="dsForm.cfg.client_secret" placeholder="••••••••" />
+              </div>
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">Site URL</label>
+              <input class="input" x-model="dsForm.cfg.site_url" placeholder="https://company.sharepoint.com/sites/wiki" />
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">
+                文件夹路径（可选）
+                <span style="color:#94a3b8;font-weight:400;">（留空=根文档库）</span>
+              </label>
+              <input class="input" x-model="dsForm.cfg.folder_path" placeholder="Shared Documents/Engineering" />
+            </div>
+          </div>
+        </template>
+
+        <!-- Google Drive -->
+        <template x-if="dsForm.type==='google_drive'">
+          <div style="display:flex;flex-direction:column;gap:0.7rem;">
+            <div style="background:#f0f7ff;border:1px solid #bfdbfe;border-radius:7px;padding:0.65rem 0.85rem;">
+              <p style="font-size:12px;color:#1d4ed8;line-height:1.55;margin:0;">
+                使用服务账号（Service Account）认证。在 Google Cloud Console 创建服务账号，下载 JSON 密钥，并将 JSON 内容粘贴至下方；同时将服务账号邮箱加入需同步的云盘共享。
+              </p>
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">Service Account JSON</label>
+              <textarea class="textarea" x-model="dsForm.cfg.credentials_json" rows="4"
+                        placeholder='{"type": "service_account", "project_id": "...", ...}'
+                        style="font-family:monospace;font-size:11.5px;"></textarea>
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">
+                文件夹 ID（可选）
+                <span style="color:#94a3b8;font-weight:400;">（留空=所有可访问文件）</span>
+              </label>
+              <input class="input" x-model="dsForm.cfg.folder_id" placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms" />
+            </div>
+          </div>
+        </template>
+
+        <!-- Apache Doris -->
+        <template x-if="dsForm.type==='doris'">
+          <div style="display:flex;flex-direction:column;gap:0.7rem;">
+            <div style="display:grid;grid-template-columns:3fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">主机</label>
+                <input class="input" x-model="dsForm.cfg.host" placeholder="127.0.0.1" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">端口</label>
+                <input class="input" type="number" x-model="dsForm.cfg.port" placeholder="9030" />
+              </div>
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">数据库名</label>
+              <input class="input" x-model="dsForm.cfg.database" placeholder="my_database" />
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">用户名</label>
+                <input class="input" x-model="dsForm.cfg.username" placeholder="root" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">密码</label>
+                <input class="input" type="password" x-model="dsForm.cfg.password" placeholder="••••••••" />
+              </div>
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">同步的表（逗号分隔，留空=全部）</label>
+              <input class="input" x-model="dsForm.cfg.tables" placeholder="orders, products" />
+            </div>
+          </div>
+        </template>
+
+        <!-- ClickHouse -->
+        <template x-if="dsForm.type==='clickhouse'">
+          <div style="display:flex;flex-direction:column;gap:0.7rem;">
+            <div style="display:grid;grid-template-columns:3fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">主机</label>
+                <input class="input" x-model="dsForm.cfg.host" placeholder="127.0.0.1" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">端口</label>
+                <input class="input" type="number" x-model="dsForm.cfg.port" placeholder="8123" />
+              </div>
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">数据库名</label>
+              <input class="input" x-model="dsForm.cfg.database" placeholder="default" />
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">用户名</label>
+                <input class="input" x-model="dsForm.cfg.username" placeholder="default" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">密码</label>
+                <input class="input" type="password" x-model="dsForm.cfg.password" placeholder="（可选）" />
+              </div>
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">同步的表（逗号分隔，留空=全部）</label>
+              <input class="input" x-model="dsForm.cfg.tables" placeholder="events, logs" />
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">每表最大行数</label>
+              <input class="input" type="number" x-model="dsForm.cfg.row_limit" placeholder="5000" />
+            </div>
+          </div>
+        </template>
+
+        <!-- Apache Hive -->
+        <template x-if="dsForm.type==='hive'">
+          <div style="display:flex;flex-direction:column;gap:0.7rem;">
+            <div style="display:grid;grid-template-columns:3fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">HiveServer2 主机</label>
+                <input class="input" x-model="dsForm.cfg.host" placeholder="127.0.0.1" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">端口</label>
+                <input class="input" type="number" x-model="dsForm.cfg.port" placeholder="10000" />
+              </div>
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">数据库名</label>
+              <input class="input" x-model="dsForm.cfg.database" placeholder="default" />
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">用户名</label>
+                <input class="input" x-model="dsForm.cfg.username" placeholder="hive" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">认证方式</label>
+                <div class="select is-fullwidth">
+                  <select x-model="dsForm.cfg.auth">
+                    <option value="NOSASL">NOSASL</option>
+                    <option value="LDAP">LDAP</option>
+                    <option value="KERBEROS">KERBEROS</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div class="field" x-show="dsForm.cfg.auth==='LDAP'">
+              <label class="label" style="font-size:12.5px;">密码</label>
+              <input class="input" type="password" x-model="dsForm.cfg.password" placeholder="••••••••" />
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">同步的表（逗号分隔，留空=全部）</label>
+              <input class="input" x-model="dsForm.cfg.tables" placeholder="fact_sales, dim_product" />
+            </div>
+          </div>
+        </template>
+
+        <!-- Elasticsearch -->
+        <template x-if="dsForm.type==='elasticsearch'">
+          <div style="display:flex;flex-direction:column;gap:0.7rem;">
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">Hosts（逗号分隔）</label>
+              <input class="input" x-model="dsForm.cfg.hosts" placeholder="http://localhost:9200" />
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">Index</label>
+              <input class="input" x-model="dsForm.cfg.index" placeholder="my-index" />
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">
+                  API Key
+                  <span style="color:#94a3b8;font-weight:400;">（优先，可选）</span>
+                </label>
+                <input class="input" type="password" x-model="dsForm.cfg.api_key" placeholder="id:api_key base64" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">用户名（Basic Auth）</label>
+                <input class="input" x-model="dsForm.cfg.username" placeholder="elastic" />
+              </div>
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">
+                文本字段（逗号分隔）
+                <span style="color:#94a3b8;font-weight:400;">（留空=全部字段）</span>
+              </label>
+              <input class="input" x-model="dsForm.cfg.text_fields" placeholder="title, body, description" />
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;">
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">时间戳字段（增量）</label>
+                <input class="input" x-model="dsForm.cfg.timestamp_field" placeholder="updated_at" />
+              </div>
+              <div class="field">
+                <label class="label" style="font-size:12.5px;">Scroll 批次大小</label>
+                <input class="input" type="number" x-model="dsForm.cfg.size" placeholder="500" />
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- MongoDB -->
+        <template x-if="dsForm.type==='mongodb'">
+          <div style="display:flex;flex-direction:column;gap:0.7rem;">
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">URI</label>
+              <input class="input" x-model="dsForm.cfg.uri" placeholder="mongodb://user:pass@localhost:27017" />
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">数据库名</label>
+              <input class="input" x-model="dsForm.cfg.database" placeholder="my_database" />
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">
+                集合（逗号分隔）
+                <span style="color:#94a3b8;font-weight:400;">（留空=全部非 system 集合）</span>
+              </label>
+              <input class="input" x-model="dsForm.cfg.collections" placeholder="users, orders" />
+            </div>
+            <div class="field">
+              <label class="label" style="font-size:12.5px;">
+                文本字段（逗号分隔）
+                <span style="color:#94a3b8;font-weight:400;">（留空=全部字段）</span>
+              </label>
+              <input class="input" x-model="dsForm.cfg.text_fields" placeholder="title, content" />
+            </div>
+          </div>
+        </template>
+
+        <div class="field">
+          <label class="label" style="font-size:12.5px;">
+            向量集合名
+            <span style="color:#94a3b8;font-weight:400;">（留空自动生成）</span>
+          </label>
+          <input class="input" x-model="dsForm.collection"
+                 :placeholder="'ds_'+(dsForm.name||'source').toLowerCase().replace(/[^a-z0-9]/g,'_')" />
+        </div>
+
+        <div class="field">
+          <label class="label" style="font-size:12.5px;">定时增量同步</label>
+          <div class="select is-fullwidth">
+            <select x-model="dsForm.sync_interval">
+              <option value="">关闭</option>
+              <option value="30">每 30 分钟</option>
+              <option value="60">每 1 小时</option>
+              <option value="360">每 6 小时</option>
+              <option value="720">每 12 小时</option>
+              <option value="1440">每 24 小时</option>
+            </select>
+          </div>
+          <p style="font-size:11.5px;color:#94a3b8;margin-top:4px;">定时同步为增量模式，仅拉取上次同步后新增的数据</p>
+        </div>
+
+        <div style="display:flex;gap:0.5rem;justify-content:flex-end;padding-top:0.2rem;">
+          <button type="button" @click="showAdd=false;resetDsForm()" class="button">取消</button>
+          <button type="submit" class="button is-primary" style="font-weight:600;" :disabled="dsSaving">
+            <span x-text="dsSaving?'创建中…':'创建'"></span>
+          </button>
+        </div>
+
+      </form>
+    </div>
+  </div>
+
+</div>
+
+<style>
+  /* ── Sub-nav: mirrors sidebar .sb-link language in light mode ── */
+  .ds-subnav {
+    display: inline-flex; align-items: center; gap: 2px;
+    background: #fff; border: 1px solid #e8e8e8; border-radius: 10px;
+    padding: 4px; margin-bottom: 1rem;
+  }
+
+  .ds-tab {
+    display: flex; align-items: center; gap: 8px;
+    padding: 0.48rem 1rem; border-radius: 6px;
+    color: rgba(0,0,0,.4); font-size: 12.5px; font-weight: 500;
+    border: none; background: none; cursor: pointer;
+    transition: background .1s, color .1s;
+  }
+  .ds-tab svg { flex-shrink: 0; opacity: .55; transition: opacity .1s; }
+  .ds-tab:hover { background: rgba(0,0,0,.04); color: rgba(0,0,0,.75); }
+  .ds-tab:hover svg { opacity: .8; }
+  .ds-tab.is-active { background: #111; color: #fff; }
+  .ds-tab.is-active svg { opacity: 1; }
+
+  .ds-badge {
+    font-size: 10px; font-weight: 700;
+    padding: 1px 6px; border-radius: 99px; line-height: 1.65;
+    background: rgba(0,0,0,.08); color: rgba(0,0,0,.45);
+    transition: background .1s, color .1s;
+  }
+  .ds-tab.is-active .ds-badge {
+    background: rgba(255,255,255,.18); color: rgba(255,255,255,.85);
+  }
+
+  .ds-add-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 0.48rem 1rem; border-radius: 6px;
+    border: none; background: #111; cursor: pointer;
+    color: #fff; font-size: 12.5px; font-weight: 500;
+    transition: opacity .1s;
+  }
+  .ds-add-btn svg { flex-shrink: 0; }
+  .ds-add-btn:hover { opacity: .82; }
+
+  .ds-modal-overlay {
+    position: fixed; inset: 0; z-index: 200;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,.45);
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+
+<script>
+function dataSourcesPage() {
+  return {
+    section: 'upload',
+
+    // ── 手动上传 ──
+    uploadTab: 'file',
+    uploadCollection: 'default',
+    existingCols: [],
+    selectedFile: null,
+    dragging: false,
+    textTitle: '',
+    textContent: '',
+    uploading: false,
+    uploadResult: null,
+
+    // ── 外部数据源 ──
+    sources: [],
+    dsLoading: true,
+    showAdd: false,
+    dsSaving: false,
+    pollTimers: {},
+    dsForm: { name:'', type:'oss', collection:'', sync_interval:'', cfg: _emptyCfg() },
+    showSchedule: false,
+    scheduleDs: null,
+    scheduleForm: { interval: '' },
+
+    // ── 共享 ──
+    toast: { show: false, msg: '', ok: true },
+
+    async init() {
+      const [colData] = await Promise.all([
+        fetch('/me/collections').then(r => r.json()),
+        this.loadSources(),
+      ]);
+      this.existingCols = colData.collections || [];
+      this.dsLoading = false;
+      this.sources.forEach(ds => { if (ds.status === 'syncing') this.startPoll(ds.id); });
+    },
+
+    // ── 上传 ──────────────────────────────────────────────────────────────
+    handleDrop(e) {
+      this.dragging = false;
+      const f = e.dataTransfer.files[0];
+      if (f) this.selectedFile = f;
+    },
+
+    async uploadFile() {
+      if (!this.selectedFile) return;
+      this.uploading = true; this.uploadResult = null;
+      try {
+        const form = new FormData();
+        form.append('file', this.selectedFile);
+        const col = this.uploadCollection || 'default';
+        const res = await fetch(`/me/documents/upload?collection=${encodeURIComponent(col)}`, { method:'POST', body:form });
+        const data = await res.json();
+        if (!res.ok) {
+          this.uploadResult = { ok:false, message: data.detail || '上传失败' };
+        } else {
+          this.uploadResult = { ok:true, message:`《${data.title}》已分成 ${data.chunk_count} 个块，存入集合「${data.collection}」` };
+          this.selectedFile = null;
+          this.$refs.fileInput.value = '';
+          await this.refreshCols();
+        }
+      } catch { this.uploadResult = { ok:false, message:'网络错误，请稍后重试' }; }
+      finally { this.uploading = false; }
+    },
+
+    async addText() {
+      if (!this.textTitle.trim() || !this.textContent.trim()) return;
+      this.uploading = true; this.uploadResult = null;
+      try {
+        const col = this.uploadCollection || 'default';
+        const res = await fetch('/me/documents/text', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ title:this.textTitle, content:this.textContent, collection:col }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          this.uploadResult = { ok:false, message: data.detail || '保存失败' };
+        } else {
+          this.uploadResult = { ok:true, message:`《${data.title}》已分成 ${data.chunk_count} 个块，存入集合「${data.collection}」` };
+          this.textTitle = ''; this.textContent = '';
+          await this.refreshCols();
+        }
+      } catch { this.uploadResult = { ok:false, message:'网络错误，请稍后重试' }; }
+      finally { this.uploading = false; }
+    },
+
+    async refreshCols() {
+      const d = await fetch('/me/collections').then(r => r.json());
+      this.existingCols = d.collections || [];
+    },
+
+    // ── 外部数据源 ────────────────────────────────────────────────────────
+    async loadSources() {
+      const data = await fetch('/api/datasources').then(r => r.json());
+      this.sources = data;
+    },
+
+    notify(msg, ok = true) {
+      this.toast = { show:true, msg, ok };
+      setTimeout(() => { this.toast.show = false; }, 3500);
+    },
+
+    typeColor(t) {
+      return {
+        oss:'#2563eb', s3:'#f59e0b', tencent_cos:'#00a3ff', huawei_obs:'#cf0a2c',
+        mysql:'#ea580c', postgres:'#7c3aed', oracle:'#f80000', sqlserver:'#00758f',
+        tidb:'#e75480', oceanbase:'#005bac',
+        doris:'#0ea5e9', clickhouse:'#f97316', hive:'#84cc16', snowflake:'#29b5e8',
+        elasticsearch:'#fbbf24', mongodb:'#16a34a',
+        confluence:'#0052cc', notion:'#191919', yuque:'#00b96b',
+        feishu:'#00b96b', dingtalk:'#1677ff', tencent_docs:'#e54d42',
+        github:'#24292f', gitlab:'#e24329',
+        sharepoint:'#038387', google_drive:'#4285f4',
+      }[t] || '#64748b';
+    },
+    statusBg(s)  { return s==='ready'?'#dcfce7':s==='syncing'?'#fef9c3':s==='error'?'#fee2e2':'#f1f5f9'; },
+    statusFg(s)  { return s==='ready'?'#16a34a':s==='syncing'?'#a16207':s==='error'?'#dc2626':'#64748b'; },
+    statusLabel(s){ return {idle:'待同步',syncing:'同步中',ready:'就绪',error:'错误'}[s]||s; },
+    fmtDate(iso) {
+      return new Date(iso).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+    },
+    fmtInterval(mins) {
+      if (!mins) return '关闭';
+      if (mins < 60) return `每${mins}分钟`;
+      if (mins < 1440) return `每${mins/60}小时`;
+      return `每${mins/1440}天`;
+    },
+
+    _buildCfg() {
+      const f = this.dsForm;
+      if (f.type === 'oss') {
+        return { endpoint:f.cfg.endpoint, access_key_id:f.cfg.access_key_id,
+                 access_key_secret:f.cfg.access_key_secret, bucket:f.cfg.bucket, prefix:f.cfg.prefix };
+      }
+      if (f.type === 's3') {
+        return { bucket:f.cfg.bucket, access_key_id:f.cfg.access_key_id,
+                 secret_access_key:f.cfg.secret_access_key, region:f.cfg.region||'us-east-1',
+                 prefix:f.cfg.prefix||'', endpoint_url:f.cfg.endpoint_url||'' };
+      }
+      if (f.type === 'tencent_cos') {
+        return { secret_id:f.cfg.secret_id, secret_key:f.cfg.secret_key,
+                 bucket:f.cfg.bucket, region:f.cfg.region, prefix:f.cfg.prefix||'' };
+      }
+      if (f.type === 'huawei_obs') {
+        return { access_key_id:f.cfg.access_key_id, secret_access_key:f.cfg.secret_access_key,
+                 endpoint:f.cfg.endpoint, bucket:f.cfg.bucket, prefix:f.cfg.prefix||'' };
+      }
+      if (f.type === 'oracle') {
+        return { host:f.cfg.host, port:parseInt(f.cfg.port)||1521,
+                 service_name:f.cfg.service_name||'', sid:f.cfg.sid||'',
+                 username:f.cfg.username, password:f.cfg.password,
+                 tables:f.cfg.tables, row_limit:parseInt(f.cfg.row_limit)||5000 };
+      }
+      if (f.type === 'sqlserver') {
+        return { host:f.cfg.host, port:parseInt(f.cfg.port)||1433,
+                 database:f.cfg.database, schema:f.cfg.schema||'dbo',
+                 username:f.cfg.username, password:f.cfg.password,
+                 tables:f.cfg.tables, row_limit:parseInt(f.cfg.row_limit)||5000 };
+      }
+      if (f.type === 'tidb') {
+        return { host:f.cfg.host, port:parseInt(f.cfg.port)||4000,
+                 database:f.cfg.database, username:f.cfg.username, password:f.cfg.password,
+                 tables:f.cfg.tables, row_limit:parseInt(f.cfg.row_limit)||5000 };
+      }
+      if (f.type === 'oceanbase') {
+        return { host:f.cfg.host, port:parseInt(f.cfg.port)||2881,
+                 database:f.cfg.database, username:f.cfg.username, password:f.cfg.password,
+                 tables:f.cfg.tables, row_limit:parseInt(f.cfg.row_limit)||5000 };
+      }
+      if (f.type === 'snowflake') {
+        return { account:f.cfg.account, user:f.cfg.user, password:f.cfg.password,
+                 database:f.cfg.database, schema:f.cfg.schema||'PUBLIC',
+                 warehouse:f.cfg.warehouse||'',
+                 tables:f.cfg.tables, row_limit:parseInt(f.cfg.row_limit)||5000 };
+      }
+      if (f.type === 'confluence') {
+        return { base_url:f.cfg.base_url, username:f.cfg.username,
+                 api_token:f.cfg.api_token, space_keys:f.cfg.space_keys||'' };
+      }
+      if (f.type === 'notion') {
+        return { token:f.cfg.token, database_ids:f.cfg.database_ids||'' };
+      }
+      if (f.type === 'yuque') {
+        return { token:f.cfg.token, namespace:f.cfg.namespace||'',
+                 base_url:f.cfg.base_url||'https://www.yuque.com' };
+      }
+      if (f.type === 'github') {
+        return { token:f.cfg.token, repos:f.cfg.repos,
+                 branch:f.cfg.branch||'main', path_prefix:f.cfg.path_prefix||'' };
+      }
+      if (f.type === 'gitlab') {
+        return { token:f.cfg.token, projects:f.cfg.projects,
+                 branch:f.cfg.branch||'main', path_prefix:f.cfg.path_prefix||'',
+                 base_url:f.cfg.base_url||'https://gitlab.com' };
+      }
+      if (f.type === 'sharepoint') {
+        return { tenant_id:f.cfg.tenant_id, client_id:f.cfg.client_id,
+                 client_secret:f.cfg.client_secret, site_url:f.cfg.site_url,
+                 folder_path:f.cfg.folder_path||'' };
+      }
+      if (f.type === 'google_drive') {
+        return { credentials_json:f.cfg.credentials_json, folder_id:f.cfg.folder_id||'' };
+      }
+      if (f.type === 'feishu') {
+        return { app_id:f.cfg.app_id, app_secret:f.cfg.app_secret, space_id:f.cfg.space_id||'' };
+      }
+      if (f.type === 'dingtalk') {
+        return { app_key:f.cfg.app_key, app_secret:f.cfg.app_secret, workspace_id:f.cfg.workspace_id||'' };
+      }
+      if (f.type === 'tencent_docs') {
+        return { client_id:f.cfg.client_id, client_secret:f.cfg.client_secret,
+                 access_token:f.cfg.access_token, refresh_token:f.cfg.refresh_token||'',
+                 folder_id:f.cfg.folder_id||'' };
+      }
+      if (f.type === 'doris') {
+        return { host:f.cfg.host, port:parseInt(f.cfg.port)||9030,
+                 database:f.cfg.database, username:f.cfg.username, password:f.cfg.password,
+                 tables:f.cfg.tables, row_limit:parseInt(f.cfg.row_limit)||5000 };
+      }
+      if (f.type === 'clickhouse') {
+        return { host:f.cfg.host, port:parseInt(f.cfg.port)||8123,
+                 database:f.cfg.database, username:f.cfg.username||'default', password:f.cfg.password||'',
+                 tables:f.cfg.tables, row_limit:parseInt(f.cfg.row_limit)||5000 };
+      }
+      if (f.type === 'hive') {
+        return { host:f.cfg.host, port:parseInt(f.cfg.port)||10000,
+                 database:f.cfg.database, username:f.cfg.username||'',
+                 password:f.cfg.auth==='LDAP'?f.cfg.password:'',
+                 tables:f.cfg.tables, row_limit:parseInt(f.cfg.row_limit)||5000,
+                 auth:f.cfg.auth||'NOSASL' };
+      }
+      if (f.type === 'elasticsearch') {
+        return { hosts:f.cfg.hosts, index:f.cfg.index,
+                 api_key:f.cfg.api_key||'', username:f.cfg.username||'', password:f.cfg.password||'',
+                 text_fields:f.cfg.text_fields||'', timestamp_field:f.cfg.timestamp_field||'updated_at',
+                 size:parseInt(f.cfg.size)||500 };
+      }
+      if (f.type === 'mongodb') {
+        return { uri:f.cfg.uri, database:f.cfg.database,
+                 collections:f.cfg.collections||'', text_fields:f.cfg.text_fields||'' };
+      }
+      return { host:f.cfg.host, port:parseInt(f.cfg.port)||(f.type==='mysql'?3306:5432),
+               database:f.cfg.database, username:f.cfg.username, password:f.cfg.password,
+               tables:f.cfg.tables, row_limit:parseInt(f.cfg.row_limit)||5000,
+               watermark_col: f.cfg.watermark_col||'' };
+    },
+
+    async createDs() {
+      this.dsSaving = true;
+      try {
+        const interval = this.dsForm.sync_interval ? parseInt(this.dsForm.sync_interval) : null;
+        const res = await fetch('/api/datasources', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ name:this.dsForm.name, type:this.dsForm.type,
+                                 config:this._buildCfg(), collection:this.dsForm.collection,
+                                 sync_interval: interval }),
+        });
+        if (!res.ok) { const e = await res.json(); this.notify(e.detail||'创建失败', false); return; }
+        this.showAdd = false; this.resetDsForm();
+        await this.loadSources();
+        this.notify('数据源已创建');
+      } finally { this.dsSaving = false; }
+    },
+
+    resetDsForm() {
+      this.dsForm = { name:'', type:'oss', collection:'', sync_interval:'', cfg:_emptyCfg() };
+    },
+
+    openSchedule(ds) {
+      this.scheduleDs = ds;
+      this.scheduleForm.interval = ds.sync_interval ? String(ds.sync_interval) : '';
+      this.showSchedule = true;
+    },
+
+    async saveSchedule() {
+      const interval = this.scheduleForm.interval ? parseInt(this.scheduleForm.interval) : null;
+      const res = await fetch(`/api/datasources/${this.scheduleDs.id}/schedule`, {
+        method:'PATCH', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ sync_interval: interval }),
+      });
+      if (!res.ok) { this.notify('设置失败', false); return; }
+      const data = await res.json();
+      const idx = this.sources.findIndex(s => s.id === this.scheduleDs.id);
+      if (idx !== -1) this.sources[idx] = data;
+      this.showSchedule = false;
+      this.notify(interval ? `已设置${this.fmtInterval(interval)}自动增量同步` : '已关闭定时同步');
+    },
+
+    async testConn(ds) {
+      this.notify('测试中…');
+      const r = await fetch(`/api/datasources/${ds.id}/test`, { method:'POST' }).then(r => r.json());
+      r.ok ? this.notify('连接成功！') : this.notify('连接失败：'+(r.error||'未知错误'), false);
+    },
+
+    async syncDs(ds) {
+      const res = await fetch(`/api/datasources/${ds.id}/sync`, { method:'POST' });
+      if (!res.ok) { const e = await res.json(); this.notify(e.detail||'同步失败', false); return; }
+      ds.status = 'syncing';
+      this.startPoll(ds.id);
+      this.notify('后台同步已开始…');
+    },
+
+    startPoll(id) {
+      if (this.pollTimers[id]) return;
+      this.pollTimers[id] = setInterval(async () => {
+        const data = await fetch(`/api/datasources/${id}/status`).then(r => r.json());
+        const idx = this.sources.findIndex(s => s.id === id);
+        if (idx !== -1) this.sources[idx] = data;
+        if (data.status !== 'syncing') {
+          clearInterval(this.pollTimers[id]); delete this.pollTimers[id];
+          if (data.status === 'ready') this.notify(`同步完成，共 ${data.doc_count} 条文档`);
+          if (data.status === 'error') this.notify('同步出错：'+data.last_error, false);
+        }
+      }, 2000);
+    },
+
+    async deleteDs(ds) {
+      if (!confirm(`确认删除数据源「${ds.name}」？\n向量集合 "${ds.collection}" 内的数据将一并删除。`)) return;
+      const res = await fetch(`/api/datasources/${ds.id}`, { method:'DELETE' });
+      if (!res.ok) { this.notify('删除失败', false); return; }
+      this.sources = this.sources.filter(s => s.id !== ds.id);
+      this.notify('已删除');
+    },
+  };
+}
+
+function _emptyCfg() {
+  return {
+    // OSS
+    endpoint:'', access_key_id:'', access_key_secret:'', bucket:'', prefix:'',
+    // S3
+    secret_access_key:'', region:'', endpoint_url:'',
+    // Tencent COS
+    secret_id:'', secret_key:'',
+    // Huawei OBS (endpoint shared above)
+    // SQL / Doris / ClickHouse / Hive / Oracle / SQL Server / TiDB / OceanBase
+    host:'', port:'', database:'', username:'', password:'', tables:'', row_limit:5000, watermark_col:'',
+    auth:'NOSASL', schema:'PUBLIC', service_name:'', sid:'',
+    // Snowflake
+    account:'', user:'', warehouse:'',
+    // Elasticsearch
+    hosts:'', index:'', api_key:'', text_fields:'', timestamp_field:'updated_at', size:500,
+    // MongoDB
+    uri:'', collections:'',
+    // Confluence
+    base_url:'', api_token:'', space_keys:'',
+    // Notion
+    token:'', database_ids:'',
+    // Yuque
+    namespace:'',
+    // GitHub
+    repos:'', branch:'main', path_prefix:'',
+    // GitLab
+    projects:'',
+    // SharePoint
+    tenant_id:'', client_id:'', client_secret:'', site_url:'', folder_path:'',
+    // Google Drive
+    credentials_json:'', folder_id:'',
+    // 飞书
+    app_id:'', app_secret:'', space_id:'',
+    // 钉钉
+    app_key:'', workspace_id:'',
+    // 腾讯文档
+    access_token:'', refresh_token:'',
+  };
+}
+</script>
+{% endblock %}

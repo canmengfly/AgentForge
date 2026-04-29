@@ -18,3 +18,26 @@ jinja2>=3.1.0
 # pgvector backend (optional — only needed when VECTOR_BACKEND=pgvector)
 pgvector>=0.3.0
 psycopg2-binary>=2.9.0
+# Data source connectors (optional — install only the ones you need)
+# Object storage
+oss2>=2.18.0
+boto3>=1.34.0
+cos-python-sdk-v5>=1.9.0
+esdk-obs-python>=3.24.0
+# Relational / OLAP
+PyMySQL>=1.1.0
+oracledb>=2.0.0
+pymssql>=2.2.0
+snowflake-sqlalchemy>=1.5.0
+# Search / NoSQL
+elasticsearch>=8.0.0
+pymongo>=4.6.0
+clickhouse-connect>=0.7.0
+pyhive[hive]>=0.7.0
+thrift>=0.16.0
+# Enterprise cloud / document platforms
+google-api-python-client>=2.100.0
+google-auth>=2.23.0
+msal>=1.24.0
+# Scheduler
+APScheduler>=3.10.0

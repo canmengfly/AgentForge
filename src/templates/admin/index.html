@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}管理控制台{% endblock %}
+{% block page_title %}管理控制台{% endblock %}
+{% block page_subtitle %}平台整体数据概览{% endblock %}
+
+{% block content %}
+<div x-data="adminDashboard()" x-init="init()">
+
+  <!-- Stats row -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.875rem;margin-bottom:1.25rem;">
+    <div class="stat-card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+        <div class="stat-lbl">总用户数</div>
+        <div class="stat-icon" style="background:#f0f0f0;">
+          <svg width="18" height="18" fill="none" stroke="#555" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+        </div>
+      </div>
+      <div class="stat-val" x-text="stats.total_users ?? '—'">—</div>
+      <p style="font-size:11.5px;color:#94a3b8;margin-top:5px;" x-text="'活跃 '+(stats.active_users??0)+' 人'"></p>
+    </div>
+    <div class="stat-card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+        <div class="stat-lbl">管理员</div>
+        <div class="stat-icon" style="background:#f0f0f0;">
+          <svg width="18" height="18" fill="none" stroke="#555" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+        </div>
+      </div>
+      <div class="stat-val" x-text="stats.admin_users ?? '—'">—</div>
+      <p style="font-size:11.5px;color:#94a3b8;margin-top:5px;">超级权限账户</p>
+    </div>
+    <div class="stat-card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+        <div class="stat-lbl">文档集合</div>
+        <div class="stat-icon" style="background:#f0f0f0;">
+          <svg width="18" height="18" fill="none" stroke="#555" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+        </div>
+      </div>
+      <div class="stat-val" x-text="stats.total_collections ?? '—'">—</div>
+      <p style="font-size:11.5px;color:#94a3b8;margin-top:5px;">向量集合</p>
+    </div>
+    <div class="stat-card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+        <div class="stat-lbl">向量分块</div>
+        <div class="stat-icon" style="background:#f0f0f0;">
+          <svg width="18" height="18" fill="none" stroke="#555" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/></svg>
+        </div>
+      </div>
+      <div class="stat-val" x-text="stats.total_document_chunks ?? '—'">—</div>
+      <p style="font-size:11.5px;color:#94a3b8;margin-top:5px;">已嵌入文本块</p>
+    </div>
+  </div>
+
+  <!-- Two-column layout -->
+  <div style="display:grid;grid-template-columns:280px 1fr;gap:1.25rem;align-items:start;">
+
+    <!-- Collections list -->
+    <div class="card-panel">
+      <div class="card-panel-head">
+        <p class="card-panel-title">所有集合</p>
+        <button type="button" @click="loadCollections()"
+                style="background:none;border:none;cursor:pointer;font-size:12.5px;color:#111;padding:3px 8px;border-radius:6px;transition:background .12s;"
+                onmouseover="this.style.background='#f5f5f5'" onmouseout="this.style.background='none'">
+          刷新
+        </button>
+      </div>
+      <template x-if="collections.length === 0">
+        <div style="padding:2rem;text-align:center;color:#94a3b8;font-size:13.5px;">暂无集合</div>
+      </template>
+      <template x-for="col in collections" :key="col.name">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:0.65rem 1.2rem;border-bottom:1px solid #f8fafc;">
+          <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+            <div style="width:6px;height:6px;border-radius:50%;background:#333;flex-shrink:0;"></div>
+            <span style="font-size:12.5px;font-family:ui-monospace,monospace;color:#334155;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" x-text="col.name"></span>
+          </div>
+          <span class="tag is-light is-small" x-text="col.count+' 块'"></span>
+        </div>
+      </template>
+    </div>
+
+    <!-- Recent users table -->
+    <div class="card-panel">
+      <div class="card-panel-head">
+        <p class="card-panel-title">近期注册用户</p>
+        <a href="/admin/users" style="font-size:13px;color:#111;text-decoration:none;font-weight:500;">查看全部 →</a>
+      </div>
+      <table class="table is-fullwidth is-hoverable">
+        <thead>
+          <tr>
+            <th>用户名</th>
+            <th>邮箱</th>
+            <th>角色</th>
+            <th>状态</th>
+            <th>注册时间</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-if="recentUsers.length === 0">
+            <tr><td colspan="5" style="text-align:center;color:#94a3b8;">暂无数据</td></tr>
+          </template>
+          <template x-for="u in recentUsers" :key="u.id">
+            <tr>
+              <td>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <div style="width:28px;height:28px;border-radius:50%;background:#f0f0f0;color:#444;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;text-transform:uppercase;flex-shrink:0;" x-text="u.username[0]"></div>
+                  <span style="font-weight:500;color:#1e293b;" x-text="u.username"></span>
+                </div>
+              </td>
+              <td style="color:#64748b;font-size:13px;" x-text="u.email"></td>
+              <td>
+                <span class="tag" :class="u.role==='admin'?'is-primary is-light':'is-light'"
+                      x-text="u.role==='admin'?'管理员':'普通用户'"></span>
+              </td>
+              <td>
+                <span class="tag" :class="u.is_active?'is-success is-light':'is-danger is-light'"
+                      x-text="u.is_active?'正常':'禁用'"></span>
+              </td>
+              <td style="color:#94a3b8;font-size:12.5px;" x-text="u.created_at.slice(0,10)"></td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+
+<script>
+function adminDashboard() {
+  return {
+    stats: {}, collections: [], recentUsers: [],
+    async init() { await Promise.all([this.loadStats(), this.loadCollections(), this.loadRecentUsers()]); },
+    async loadStats() { this.stats = await fetch('/api/admin/stats').then(r => r.json()); },
+    async loadCollections() {
+      const data = await fetch('/api/admin/collections').then(r => r.json());
+      this.collections = data.collections || [];
+    },
+    async loadRecentUsers() {
+      const data = await fetch('/api/admin/users?page_size=8').then(r => r.json());
+      this.recentUsers = data.users || [];
+    }
+  };
+}
+</script>
+{% endblock %}

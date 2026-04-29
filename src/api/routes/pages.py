@@ -4,6 +4,8 @@ Uses Starlette 1.x TemplateResponse(request, name, context) signature.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -12,7 +14,9 @@ from src.core.deps import get_optional_user
 from src.core.models import User, UserRole
 
 router = APIRouter(tags=["pages"])
-templates = Jinja2Templates(directory="templates")
+# Resolve templates directory relative to this file so it works when installed via pip.
+_TEMPLATES_DIR = Path(__file__).parent.parent.parent / "templates"
+templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 
 
 def _ctx(user: User | None, **extra) -> dict:
@@ -59,11 +63,9 @@ async def dashboard(request: Request, user: User | None = Depends(get_optional_u
     return templates.TemplateResponse(request, "dashboard.html", _ctx(user))
 
 
-@router.get("/upload", response_class=HTMLResponse)
-async def upload_page(request: Request, user: User | None = Depends(get_optional_user)):
-    if not user:
-        return _redirect_login()
-    return templates.TemplateResponse(request, "upload.html", _ctx(user))
+@router.get("/upload")
+async def upload_redirect():
+    return RedirectResponse("/datasources", status_code=301)
 
 
 @router.get("/search", response_class=HTMLResponse)
@@ -87,6 +89,13 @@ async def export_page(request: Request, user: User | None = Depends(get_optional
     return templates.TemplateResponse(request, "export.html", _ctx(user))
 
 
+@router.get("/datasources", response_class=HTMLResponse)
+async def datasources_page(request: Request, user: User | None = Depends(get_optional_user)):
+    if not user:
+        return _redirect_login()
+    return templates.TemplateResponse(request, "datasources.html", _ctx(user))
+
+
 # ── Admin pages ──────────────────────────────────────────────────────────────
 
 
@@ -106,3 +115,12 @@ async def admin_users_page(request: Request, user: User | None = Depends(get_opt
     if user.role != UserRole.admin:
         return RedirectResponse("/dashboard", status_code=302)
     return templates.TemplateResponse(request, "admin/users.html", _ctx(user))
+
+
+@router.get("/admin/settings", response_class=HTMLResponse)
+async def admin_settings_page(request: Request, user: User | None = Depends(get_optional_user)):
+    if not user:
+        return _redirect_login()
+    if user.role != UserRole.admin:
+        return RedirectResponse("/dashboard", status_code=302)
+    return templates.TemplateResponse(request, "admin/settings.html", _ctx(user))

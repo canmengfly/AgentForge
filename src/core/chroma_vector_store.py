@@ -52,8 +52,15 @@ def add_document(doc: ParsedDocument, collection: str = "default") -> list[str]:
         return []
 
     col = _collection(collection)
+
+    # Remove all existing chunks for this doc so stale chunks don't linger
+    # when the new version produces a different number of chunks.
+    existing = col.get(where={"doc_id": doc.doc_id}, include=[])
+    if existing["ids"]:
+        col.delete(ids=existing["ids"])
+
     embeddings = embed_texts([c.content for c in chunks])
-    col.upsert(
+    col.add(
         ids=[c.chunk_id for c in chunks],
         embeddings=embeddings,
         documents=[c.content for c in chunks],

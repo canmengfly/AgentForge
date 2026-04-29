@@ -230,10 +230,10 @@ class TestPageRoutes:
         assert resp.status_code == 302
         assert "/login" in resp.headers["location"]
 
-    def test_unauthenticated_upload_redirects_to_login(self, client):
+    def test_unauthenticated_upload_redirects(self, client):
         do_logout(client)
         resp = client.get("/upload", follow_redirects=False)
-        assert resp.status_code == 302
+        assert resp.status_code in (301, 302)
 
     def test_unauthenticated_search_redirects_to_login(self, client):
         do_logout(client)

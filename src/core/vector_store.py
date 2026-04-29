@@ -50,7 +50,7 @@ def search(
     where: dict | None = None,
 ) -> list[SearchResult]:
     raw = _backend().search(query, collection, top_k, where)
-    # Normalise to façade SearchResult
+    threshold = settings.search_score_threshold
     return [
         SearchResult(
             chunk_id=r.chunk_id,
@@ -60,6 +60,7 @@ def search(
             metadata=r.metadata,
         )
         for r in raw
+        if r.score >= threshold
     ]
 
 

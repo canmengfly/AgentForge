@@ -2,7 +2,7 @@
 
 **Agent Data Distillation Platform**
 
-A self-hosted AI knowledge platform. Upload any document, retrieve context via semantic vector search, and integrate seamlessly with Claude Desktop / Claude Code through the MCP protocol.
+A self-hosted AI knowledge platform. Upload documents or connect external data sources, retrieve context via hybrid semantic + BM25 search with optional cross-encoder reranking, and integrate seamlessly with Claude Desktop / Claude Code through the MCP protocol.
 
 [中文文档](README_ZH.md) | [PyPI](https://pypi.org/project/agentf/) | [GitHub](https://github.com/canmengfly/AgentForge)
 
@@ -13,18 +13,18 @@ A self-hosted AI knowledge platform. Upload any document, retrieve context via s
 <table>
   <tr>
     <td><img src="docs/screenshots/dashboard.png" alt="Dashboard" /></td>
-    <td><img src="docs/screenshots/upload.png" alt="Upload Documents" /></td>
+    <td><img src="docs/screenshots/datasources.png" alt="Data Sources" /></td>
   </tr>
   <tr>
     <td align="center">Dashboard</td>
-    <td align="center">Document Upload</td>
+    <td align="center">External Data Sources</td>
   </tr>
   <tr>
     <td><img src="docs/screenshots/search.png" alt="Semantic Search" /></td>
     <td><img src="docs/screenshots/agent-integration.png" alt="Agent Integration" /></td>
   </tr>
   <tr>
-    <td align="center">Semantic Search</td>
+    <td align="center">Hybrid Search</td>
     <td align="center">Agent Integration</td>
   </tr>
 </table>
@@ -36,7 +36,11 @@ A self-hosted AI knowledge platform. Upload any document, retrieve context via s
 | Category | Details |
 |---|---|
 | **Document Ingestion** | TXT, MD, HTML, PDF, DOCX — file upload or paste text |
-| **Vector Search** | ChromaDB (default) cosine similarity, local sentence-transformers embeddings, no API key needed |
+| **External Data Sources** | 27 connector types: object storage, relational DBs, OLAP, NoSQL, document platforms, code repos, enterprise cloud |
+| **Hybrid Search** | Vector cosine similarity + BM25 re-scoring for SQL/structured sources |
+| **Reranker** | Optional cross-encoder reranking (sentence-transformers) for higher precision |
+| **Scheduled Sync** | APScheduler-based incremental sync for all external data sources |
+| **Vector Backends** | ChromaDB (default) or PostgreSQL + pgvector |
 | **User System** | Admin + regular user roles, JWT httpOnly Cookie authentication |
 | **API Tokens** | Persistent API tokens (`aft_` prefix), SHA-256 hashed, shown only once at creation |
 | **MCP Server** | stdio transport, exposes 5 tools for Claude to call |
@@ -51,24 +55,35 @@ A self-hosted AI knowledge platform. Upload any document, retrieve context via s
 Browser / Claude Desktop / API Client
          │
          ▼
-┌─────────────────────────────────────────┐
-│              FastAPI App                 │
-│  ┌──────────┐  ┌───────┐  ┌─────────┐  │
-│  │  Pages   │  │  Auth │  │  Admin  │  │
-│  │(Jinja2)  │  │  /me  │  │/api/adm │  │
-│  └──────────┘  └───────┘  └─────────┘  │
-│         │            │                  │
-│  ┌──────▼────────────▼────────────────┐ │
-│  │         Vector Store Facade        │ │
-│  │  chroma_vector_store (default)     │ │
-│  │  pg_vector_store     (optional)    │ │
-│  └────────────────────────────────────┘ │
-│         │                               │
-│  ┌──────▼──────┐   ┌───────────────┐   │
-│  │  ChromaDB   │   │  SQLite       │   │
-│  │ (documents) │   │ (users+tokens)│   │
-│  └─────────────┘   └───────────────┘   │
-└─────────────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│                   FastAPI App                     │
+│  ┌──────────┐  ┌───────┐  ┌──────────────────┐  │
+│  │  Pages   │  │  Auth │  │  Admin / me/*    │  │
+│  │(Jinja2)  │  │  /me  │  │  datasources     │  │
+│  └──────────┘  └───────┘  └──────────────────┘  │
+│                                │                 │
+│  ┌─────────────────────────────▼───────────────┐ │
+│  │            Hybrid Retrieval Pipeline        │ │
+│  │  Vector fan-out → BM25 re-score (SQL types) │ │
+│  │  → Cross-encoder rerank (optional) → Top-K  │ │
+│  └─────────────────────────────────────────────┘ │
+│                                │                 │
+│  ┌─────────────────────────────▼───────────────┐ │
+│  │           Vector Store Facade               │ │
+│  │  chroma_vector_store (default)              │ │
+│  │  pg_vector_store     (optional pgvector)    │ │
+│  └─────────────────────────────────────────────┘ │
+│                                                   │
+│  ┌──────────────────────────────────────────────┐ │
+│  │  APScheduler  ←  DataSource Connectors (27)  │ │
+│  │  incremental sync → ParsedDocument → chunks  │ │
+│  └──────────────────────────────────────────────┘ │
+│                                                   │
+│  ┌──────────────┐   ┌──────────────────────────┐ │
+│  │   ChromaDB   │   │  SQLite                  │ │
+│  │  (documents) │   │  (users, tokens, sources)│ │
+│  └──────────────┘   └──────────────────────────┘ │
+└──────────────────────────────────────────────────┘
          │
          ▼
   MCP stdio server  (src/mcp/server.py)
@@ -120,6 +135,63 @@ Open <http://localhost:8000>. A default admin account is created on first launch
 
 ---
 
+## External Data Sources
+
+AgentForge supports **27 external data source types** that can be connected, synced on a schedule, and searched alongside your uploaded documents.
+
+### Supported Connectors
+
+| Category | Types |
+|---|---|
+| **Object Storage** | Alibaba Cloud OSS, Amazon S3, Tencent Cloud COS, Huawei Cloud OBS |
+| **Relational DB** | MySQL, PostgreSQL, Oracle, SQL Server, TiDB, OceanBase |
+| **OLAP / Data Warehouse** | Apache Doris, ClickHouse, Apache Hive, Snowflake |
+| **Search / NoSQL** | Elasticsearch, MongoDB |
+| **Document Platforms** | Feishu (Lark) Docs, DingTalk Docs, Tencent Docs, Confluence, Notion, Yuque |
+| **Code Platforms** | GitHub, GitLab |
+| **Enterprise Cloud** | Microsoft SharePoint, Google Drive |
+
+### Adding a Data Source
+
+1. Navigate to **Data Sources** in the sidebar
+2. Click **New Data Source**, choose a type, and fill in the connection fields
+3. Click **Test Connection** to validate credentials
+4. Set a sync interval (e.g., `30` minutes) and save
+5. The scheduler automatically syncs the source and indexes content into your collection
+
+### Sync Behavior
+
+- **Full sync**: fetches all content on the first run
+- **Incremental sync**: subsequent runs fetch only new/modified content (where the source supports it)
+- Synced documents appear in the collection you specify and are searchable immediately
+
+---
+
+## Hybrid Search
+
+Search results combine two signals:
+
+1. **Vector similarity** — sentence-transformers cosine distance, applied to all collections
+2. **BM25 re-scoring** — term-frequency ranking applied to structured SQL sources (MySQL, PostgreSQL, Oracle, SQL Server, TiDB, OceanBase, Doris, ClickHouse, Hive, Snowflake)
+
+An optional **cross-encoder reranker** can be enabled to further refine result ordering using a dedicated relevance model.
+
+### Unified Search Across All Sources
+
+```http
+POST /me/search/all
+Content-Type: application/json
+
+{
+  "query": "quarterly revenue by region",
+  "top_k": 10
+}
+```
+
+This searches across all your collections — uploaded documents and synced data sources — and returns a unified ranked result list.
+
+---
+
 ## Configuration
 
 All settings are read from environment variables (`.env` file supported):
@@ -134,6 +206,7 @@ All settings are read from environment variables (`.env` file supported):
 | `PG_VECTOR_URL` | `""` | PostgreSQL DSN when using pgvector |
 | `EMBEDDING_DIM` | `384` | Embedding vector dimension (must match model) |
 | `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | sentence-transformers model name |
+| `RERANKER_MODEL` | `""` | Cross-encoder model name (empty = disabled) |
 
 `.env` example:
 
@@ -141,6 +214,8 @@ All settings are read from environment variables (`.env` file supported):
 DATA_DIR=/var/agentforge/data
 JWT_SECRET=replace-with-a-random-32-char-string
 VECTOR_BACKEND=chroma
+EMBEDDING_MODEL=all-MiniLM-L6-v2
+RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2
 ```
 
 ---
@@ -176,7 +251,8 @@ Authorization: Bearer aft_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 | DELETE | `/me/documents/{doc_id}` | Delete a document and its chunks |
 | DELETE | `/me/collections/{name}` | Delete an entire collection |
 | GET | `/me/chunks` | List chunks (paginated) |
-| POST | `/me/search` | Semantic search |
+| POST | `/me/search` | Semantic search within a collection |
+| POST | `/me/search/all` | Hybrid search across all collections |
 
 **Search request body:**
 ```json
@@ -186,6 +262,18 @@ Authorization: Bearer aft_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
   "top_k": 5
 }
 ```
+
+### Data Source Endpoints (`/me/datasources`)
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/me/datasources` | List your data sources |
+| POST | `/me/datasources` | Create a data source |
+| GET | `/me/datasources/{id}` | Get a data source |
+| PUT | `/me/datasources/{id}` | Update a data source |
+| DELETE | `/me/datasources/{id}` | Delete a data source |
+| POST | `/me/datasources/{id}/test` | Test connection |
+| POST | `/me/datasources/{id}/sync` | Trigger manual sync |
 
 ### API Token Endpoints (`/me/tokens`)
 
@@ -266,33 +354,62 @@ Add the same `mcpServers` block to your project's `.claude/settings.json`.
 ```
 src/
   api/
-    main.py                # FastAPI app, lifecycle, route registration
+    main.py                     # FastAPI app, lifecycle, route registration
     routes/
-      auth_routes.py       # /auth/*
-      admin.py             # /api/admin/*
-      me.py                # /me/* (documents, search, API tokens)
-      config_export.py     # /export/*
-      pages.py             # HTML pages (Jinja2)
+      auth_routes.py            # /auth/*
+      admin.py                  # /api/admin/*
+      me.py                     # /me/* (documents, search, API tokens)
+      datasources.py            # /me/datasources/* (data source CRUD + sync)
+      config_export.py          # /export/*
+      pages.py                  # HTML pages (Jinja2)
   core/
-    config.py              # pydantic-settings configuration
-    auth.py                # JWT + bcrypt + API token utilities
-    database.py            # SQLAlchemy SQLite setup
-    models.py              # User, APIToken ORM models
-    deps.py                # FastAPI dependencies (CurrentUser, etc.)
-    embeddings.py          # sentence-transformers model loader
-    document_processor.py  # File parsing and text chunking
-    vector_store.py        # Vector store facade
-    chroma_vector_store.py # ChromaDB backend
-    pg_vector_store.py     # pgvector backend (optional)
+    config.py                   # pydantic-settings configuration
+    auth.py                     # JWT + bcrypt + API token utilities
+    database.py                 # SQLAlchemy SQLite setup
+    models.py                   # User, APIToken, DataSource ORM models
+    deps.py                     # FastAPI dependencies (CurrentUser, etc.)
+    embeddings.py               # sentence-transformers model loader
+    document_processor.py       # File parsing and text chunking
+    vector_store.py             # Vector store facade
+    chroma_vector_store.py      # ChromaDB backend
+    pg_vector_store.py          # pgvector backend (optional)
+    scheduler.py                # APScheduler incremental sync
+    connectors/
+      __init__.py
+      oss_connector.py          # Alibaba Cloud OSS
+      s3_connector.py           # Amazon S3
+      tencent_cos_connector.py  # Tencent Cloud COS
+      huawei_obs_connector.py   # Huawei Cloud OBS
+      sql_connector.py          # MySQL / PostgreSQL (shared)
+      oracle_connector.py       # Oracle Database
+      sqlserver_connector.py    # Microsoft SQL Server
+      tidb_connector.py         # TiDB (MySQL-compatible)
+      oceanbase_connector.py    # OceanBase (MySQL-compatible)
+      doris_connector.py        # Apache Doris (MySQL-compatible)
+      elasticsearch_connector.py
+      mongodb_connector.py
+      clickhouse_connector.py
+      hive_connector.py
+      snowflake_connector.py
+      feishu_connector.py       # Feishu (Lark) Docs
+      dingtalk_connector.py     # DingTalk Docs
+      tencent_docs_connector.py # Tencent Docs
+      confluence_connector.py   # Atlassian Confluence
+      notion_connector.py       # Notion
+      yuque_connector.py        # Yuque (语雀)
+      github_connector.py       # GitHub repositories
+      gitlab_connector.py       # GitLab repositories
+      sharepoint_connector.py   # Microsoft SharePoint
+      google_drive_connector.py # Google Drive
   mcp/
-    server.py              # MCP stdio server
-templates/                 # Jinja2 HTML templates
+    server.py                   # MCP stdio server
+templates/                      # Jinja2 HTML templates
   base.html
   login.html
   dashboard.html
-  upload.html
   search_page.html
-  export.html              # Agent Integration page
+  datasources.html              # Data source management UI
+  export.html                   # Agent Integration page
   chunks.html
   admin/
     index.html
@@ -304,6 +421,14 @@ tests/
   test_documents.py
   test_search.py
   test_e2e.py
+  test_new_datasources.py       # S3, Doris, ES, MongoDB, ClickHouse, Hive
+  test_extended_datasources.py  # 14 new connectors
+docs/
+  datasources.md                # Connector configuration reference
+  hybrid-search.md              # Hybrid retrieval architecture
+  api-reference.md              # Full REST API reference
+  deployment.md                 # Production deployment guide
+  development.md                # Development and testing guide
 ```
 
 ---
@@ -316,7 +441,7 @@ pytest tests/ -v
 
 - Temporary directories for ChromaDB and SQLite — no impact on production data
 - Deterministic dummy embeddings — no model download needed
-- Session-scoped shared app and HTTP client
+- Optional connector dependencies patched at `sys.modules` level — no real credentials needed
 
 ---
 
@@ -342,6 +467,7 @@ To use PostgreSQL instead of ChromaDB:
 - JWT tokens are stored in httpOnly Cookies — inaccessible to JavaScript.
 - Passwords are hashed with bcrypt (cost factor 12).
 - API tokens are stored as SHA-256 hashes; plaintext is returned only once at creation.
+- Data source credentials (passwords, API keys, secrets) are masked as `***` in all API responses.
 - User data isolation is enforced at the storage layer, not just the API layer.
 - Admins cannot demote or delete their own account.
 - Disabled users cannot log in even with the correct password.

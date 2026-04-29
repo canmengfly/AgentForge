@@ -111,56 +111,81 @@ def parse_file(file: BinaryIO, filename: str) -> ParsedDocument:
     )
 
 
+_SENT_END_RE = re.compile(r"(?<=[。！？!?…])\s*|(?<=\n)\n+")
+
+
+def _split_sentences(text: str) -> list[str]:
+    """Split at sentence / paragraph boundaries; preserve non-empty segments."""
+    parts = _SENT_END_RE.split(text)
+    return [p.strip() for p in parts if p.strip()]
+
+
 def chunk_document(doc: ParsedDocument, chunk_size: int = 512, overlap: int = 64) -> list[DocumentChunk]:
-    text = doc.content
+    text = doc.content.strip()
+    if not text:
+        return []
+
+    sentences = _split_sentences(text) or [text]
+
+    # Greedily pack sentences into raw chunks
+    raw_chunks: list[str] = []
+    buf: list[str] = []
+    buf_len = 0
+
+    for sent in sentences:
+        if len(sent) > chunk_size:
+            # Flush buffer, then force-split the oversized sentence by characters
+            if buf:
+                raw_chunks.append(" ".join(buf))
+                buf, buf_len = [], 0
+            for i in range(0, len(sent), chunk_size):
+                raw_chunks.append(sent[i: i + chunk_size])
+            continue
+
+        join_cost = 1 if buf else 0
+        if buf_len + join_cost + len(sent) <= chunk_size:
+            buf.append(sent)
+            buf_len += join_cost + len(sent)
+        else:
+            if buf:
+                raw_chunks.append(" ".join(buf))
+            buf, buf_len = [sent], len(sent)
+
+    if buf:
+        raw_chunks.append(" ".join(buf))
+
+    if not raw_chunks:
+        raw_chunks = [text]
+
+    total = len(raw_chunks)
     chunks: list[DocumentChunk] = []
-    separators = ["\n\n", "\n", ". ", " ", ""]
 
-    def _split(text: str, sep_idx: int = 0) -> list[str]:
-        if len(text) <= chunk_size or sep_idx >= len(separators):
-            return [text]
-        sep = separators[sep_idx]
-        parts = text.split(sep) if sep else list(text)
-        result: list[str] = []
-        current = ""
-        for part in parts:
-            candidate = current + (sep if current else "") + part
-            if len(candidate) <= chunk_size:
-                current = candidate
-            else:
-                if current:
-                    result.append(current)
-                if len(part) > chunk_size:
-                    result.extend(_split(part, sep_idx + 1))
-                    current = ""
-                else:
-                    current = part
-        if current:
-            result.append(current)
-        return result
-
-    raw_chunks = _split(text)
-
-    # Apply overlap by prepending tail of previous chunk
-    for i, chunk_text in enumerate(raw_chunks):
+    for i, raw in enumerate(raw_chunks):
         if i > 0 and overlap > 0:
             prev = raw_chunks[i - 1]
-            prefix = prev[-overlap:].lstrip()
-            chunk_text = prefix + " " + chunk_text if prefix else chunk_text
+            tail = prev[-overlap:]
+            # Trim to first whitespace so overlap starts at a word boundary
+            ws = tail.find(" ")
+            if 0 < ws < len(tail) - 1:
+                tail = tail[ws + 1:]
+            chunk_text = (tail + " " + raw).strip() if tail.strip() else raw
+        else:
+            chunk_text = raw
 
         chunk_id = _make_id(doc.doc_id + str(i))
         chunks.append(
             DocumentChunk(
                 chunk_id=chunk_id,
                 doc_id=doc.doc_id,
-                content=chunk_text.strip(),
+                content=chunk_text,
                 metadata={
                     **doc.metadata,
                     "title": doc.title,
                     "source": doc.source,
                     "chunk_index": i,
-                    "total_chunks": len(raw_chunks),
+                    "total_chunks": total,
                 },
             )
         )
+
     return chunks

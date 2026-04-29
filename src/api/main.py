@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+# Resolve resource directories relative to this file so the package works
+# whether installed via pip or run directly from the repo root.
+_SRC_DIR = Path(__file__).parent.parent  # …/src/
+
 from src.core.config import settings
 from src.api.routes import collections, config_export, documents, search
-from src.api.routes import auth_routes, admin, me, pages
+from src.api.routes import auth_routes, admin, me, pages, datasources
 
 
 def _bootstrap_admin():
@@ -39,16 +44,67 @@ def _bootstrap_admin():
         db.close()
 
 
+def _migrate_db():
+    """Add new columns to existing tables without Alembic."""
+    from sqlalchemy import text
+    from src.core.database import engine
+    with engine.connect() as conn:
+        existing = {row[1] for row in conn.execute(text("PRAGMA table_info(data_sources)"))}
+        for col, ddl in [
+            ("sync_interval", "ALTER TABLE data_sources ADD COLUMN sync_interval INTEGER"),
+            ("sync_cursor",   "ALTER TABLE data_sources ADD COLUMN sync_cursor TEXT"),
+        ]:
+            if col not in existing:
+                conn.execute(text(ddl))
+        conn.commit()
+
+
+def _restore_embedding_model():
+    """Load the persisted embedding model choice from DB (overrides .env)."""
+    from src.core.database import SessionLocal
+    from src.core.models import SystemConfig
+    from src.core.embeddings import switch_model
+    db = SessionLocal()
+    try:
+        cfg = db.get(SystemConfig, "embedding_model")
+        if cfg:
+            switch_model(cfg.value)
+    finally:
+        db.close()
+
+
+def _restore_reranker_model():
+    """Load the persisted reranker choice from DB (if previously configured)."""
+    from src.core.database import SessionLocal
+    from src.core.models import SystemConfig
+    db = SessionLocal()
+    try:
+        cfg = db.get(SystemConfig, "reranker_model")
+        if cfg and cfg.value:
+            from src.core.reranker import switch_reranker
+            switch_reranker(cfg.value)
+    except Exception:
+        pass
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from src.core.database import Base, engine
     Base.metadata.create_all(bind=engine)
+    _migrate_db()
     _bootstrap_admin()
     from src.core.vector_store import init_vector_db
     init_vector_db()
+    _restore_embedding_model()
+    _restore_reranker_model()
     from src.core.embeddings import get_model
     get_model()
+    from src.core.scheduler import start_scheduler, stop_scheduler
+    start_scheduler()
     yield
+    stop_scheduler()
 
 
 app = FastAPI(
@@ -65,7 +121,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory=str(_SRC_DIR / "static")), name="static")
 
 # ── Routers ──────────────────────────────────────────────────────────────────
 
@@ -77,6 +133,7 @@ app.include_router(documents.router)                  # /documents/*  (legacy / 
 app.include_router(search.router)                     # /search       (legacy / MCP)
 app.include_router(collections.router)                # /collections  (legacy / MCP)
 app.include_router(config_export.router)              # /export/*
+app.include_router(datasources.router)                # /api/datasources/*
 
 
 @app.get("/health", tags=["meta"])

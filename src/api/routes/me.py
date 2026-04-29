@@ -7,9 +7,11 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
+from src.core.bm25 import BM25
 from src.core.deps import CurrentUser, DBSession
 from src.core.document_processor import parse_file, parse_text
-from src.core.models import APIToken
+from src.core.models import APIToken, DataSource, DataSourceType
+from src.core.reranker import rerank
 from src.core.vector_store import (
     add_document,
     delete_collection,
@@ -47,6 +49,11 @@ class SearchRequest(BaseModel):
     query: str
     collection: str = "default"
     top_k: int = Field(default=5, ge=1, le=20)
+
+
+class SearchAllRequest(BaseModel):
+    query: str
+    top_k: int = Field(default=5, ge=1, le=50)
 
 
 @router.get("/collections")
@@ -206,7 +213,92 @@ async def my_search(body: SearchRequest, current_user: CurrentUser):
                 "score": r.score,
                 "title": r.metadata.get("title", ""),
                 "source": r.metadata.get("source", ""),
+                "collection": body.collection,
             }
             for r in results
         ],
     }
+
+
+_CANDIDATE_K = 20   # vector candidates fetched per collection
+_MAX_RERANK  = 80   # hard cap on total candidates sent to the cross-encoder
+
+
+@router.post("/search/all")
+async def my_search_all(body: SearchAllRequest, current_user: CurrentUser, db: DBSession):
+    """Hybrid search: vector recall across all collections + BM25 boost for SQL rows
+    + optional cross-encoder reranking (Phase 2, enabled when reranker_model is set).
+    """
+    prefix = f"u{current_user.id}_"
+    user_cols = [c["name"] for c in list_collections() if c["name"].startswith(prefix)]
+
+    if not user_cols:
+        return {"query": body.query, "collections": "all", "hits": []}
+
+    # Identify SQL datasource collections so we can BM25-boost their results (Phase 1)
+    sql_ds = (
+        db.query(DataSource)
+        .filter(
+            DataSource.created_by == current_user.id,
+            DataSource.type.in_([
+                DataSourceType.mysql, DataSourceType.postgres,
+                DataSourceType.oracle, DataSourceType.sqlserver,
+                DataSourceType.tidb, DataSourceType.oceanbase,
+                DataSourceType.doris, DataSourceType.clickhouse, DataSourceType.hive,
+                DataSourceType.snowflake,
+            ]),
+        )
+        .all()
+    )
+    sql_col_names: set[str] = {f"u{ds.created_by}_{ds.collection}" for ds in sql_ds}
+
+    # Fan-out: vector search across all collections with a wider candidate pool
+    candidate_k = max(_CANDIDATE_K, body.top_k * 3)
+    raw: list = []
+    for col in user_cols:
+        raw.extend(search(body.query, col, top_k=candidate_k))
+
+    if not raw:
+        return {"query": body.query, "collections": "all", "hits": []}
+
+    # Phase 1 — BM25 re-score SQL candidates
+    # BM25 handles exact keyword matches that cosine similarity may underrank.
+    sql_idx = [
+        i for i, r in enumerate(raw)
+        if r.metadata.get("collection") in sql_col_names
+    ]
+    if sql_idx:
+        sql_texts = [raw[i].content for i in sql_idx]
+        bm25_scores = BM25(sql_texts).scores(body.query)
+        for pos, i in enumerate(sql_idx):
+            raw_s = bm25_scores[pos]
+            # x/(x+1) maps [0,∞)→[0,1) without needing a max normalisation
+            bm25_norm = round(raw_s / (raw_s + 1.0), 4)
+            raw[i].score = max(raw[i].score, bm25_norm)
+
+    # Phase 2 — cross-encoder rerank (only when reranker_model is configured)
+    candidates = raw[:_MAX_RERANK]
+    ranked = rerank(body.query, candidates, top_k=body.top_k * 2)
+
+    # Dedup by chunk_id → top_k
+    seen: set[str] = set()
+    hits: list[dict] = []
+    for r in sorted(ranked, key=lambda x: x.score, reverse=True):
+        if r.chunk_id in seen:
+            continue
+        seen.add(r.chunk_id)
+        col_full = r.metadata.get("collection", "")
+        hits.append({
+            "chunk_id": r.chunk_id,
+            "doc_id": r.doc_id,
+            "content": r.content,
+            "score": r.score,
+            "title": r.metadata.get("title", ""),
+            "source": r.metadata.get("source", ""),
+            "collection": _strip(current_user.id, col_full),
+            "source_type": r.metadata.get("source_type", "document"),
+        })
+        if len(hits) >= body.top_k:
+            break
+
+    return {"query": body.query, "collections": "all", "hits": hits}

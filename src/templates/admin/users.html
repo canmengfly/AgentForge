@@ -1,0 +1,300 @@
+{% extends "base.html" %}
+{% block title %}用户管理{% endblock %}
+{% block page_title %}用户管理{% endblock %}
+{% block page_subtitle %}创建、编辑和管理平台用户{% endblock %}
+
+{% block header_actions %}
+  <button type="button" @click="$dispatch('open-create')" class="button is-primary is-small" style="font-weight:600;gap:6px;">
+    <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+    新建用户
+  </button>
+{% endblock %}
+
+{% block content %}
+<div x-data="userManager()" x-init="init()" @open-create.window="openCreate()">
+
+  <!-- Filter bar -->
+  <div class="card-panel" style="padding:0.9rem 1.25rem;margin-bottom:1.1rem;">
+    <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+      <div class="control has-icons-left" style="flex:1;min-width:200px;">
+        <input class="input is-small" type="text" x-model="filters.q"
+               @input.debounce.300ms="page=1;load()"
+               placeholder="搜索用户名或邮箱…" />
+        <span class="icon is-left is-small" style="color:#94a3b8;">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        </span>
+      </div>
+      <div class="select is-small">
+        <select x-model="filters.role" @change="page=1;load()">
+          <option value="">全部角色</option>
+          <option value="admin">管理员</option>
+          <option value="user">普通用户</option>
+        </select>
+      </div>
+      <span style="font-size:12.5px;color:#94a3b8;white-space:nowrap;" x-text="'共 '+total+' 位用户'"></span>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="card-panel">
+    <div style="overflow-x:auto;">
+      <table class="table is-fullwidth is-hoverable">
+        <thead>
+          <tr>
+            <th>用户</th>
+            <th>邮箱</th>
+            <th>角色</th>
+            <th>状态</th>
+            <th>最后登录</th>
+            <th>注册时间</th>
+            <th style="text-align:right;">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-if="loading">
+            <tr><td colspan="7" style="text-align:center;padding:3rem;color:#94a3b8;">加载中…</td></tr>
+          </template>
+          <template x-if="!loading && users.length === 0">
+            <tr><td colspan="7" style="text-align:center;padding:3rem;color:#94a3b8;">没有找到用户</td></tr>
+          </template>
+          <template x-for="u in users" :key="u.id">
+            <tr>
+              <!-- User -->
+              <td>
+                <div style="display:flex;align-items:center;gap:9px;">
+                  <div style="width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;text-transform:uppercase;flex-shrink:0;"
+                       :style="u.role==='admin'?'background:#e8e8e8;color:#111':'background:#f0f0f0;color:#444'"
+                       x-text="u.username[0]"></div>
+                  <span style="font-weight:500;color:#0f172a;font-size:13.5px;" x-text="u.username"></span>
+                </div>
+              </td>
+              <!-- Email -->
+              <td style="color:#64748b;font-size:13px;" x-text="u.email"></td>
+              <!-- Role -->
+              <td>
+                <span class="tag" :class="u.role==='admin'?'is-primary is-light':'is-light'"
+                      style="font-size:12px;" x-text="u.role==='admin'?'管理员':'普通用户'"></span>
+              </td>
+              <!-- Status toggle -->
+              <td>
+                <button type="button" @click="toggleActive(u)"
+                        class="tag"
+                        :class="u.is_active?'is-success is-light':'is-danger is-light'"
+                        style="border:none;cursor:pointer;font-size:12px;font-weight:500;padding:0 0.5em;height:auto;"
+                        :title="u.is_active?'点击禁用':'点击启用'"
+                        x-text="u.is_active?'正常':'禁用'"></button>
+              </td>
+              <!-- Last login -->
+              <td style="color:#94a3b8;font-size:12.5px;" x-text="u.last_login?u.last_login.slice(0,16).replace('T',' '):'从未登录'"></td>
+              <!-- Created -->
+              <td style="color:#94a3b8;font-size:12.5px;" x-text="u.created_at.slice(0,10)"></td>
+              <!-- Actions -->
+              <td style="text-align:right;">
+                <div style="display:inline-flex;align-items:center;gap:4px;">
+                  <button type="button" @click="openEdit(u)"
+                          class="button is-small" style="background:#f0f0f0;color:#111;border:none;font-size:12px;height:28px;padding:0 10px;">
+                    编辑
+                  </button>
+                  <button type="button" @click="resetPassword(u)"
+                          class="button is-small" style="background:#fffbeb;color:#d97706;border:none;font-size:12px;height:28px;padding:0 10px;">
+                    重置密码
+                  </button>
+                  <button type="button" @click="deleteUser(u)"
+                          class="button is-small is-danger is-light" style="font-size:12px;height:28px;padding:0 10px;border:none;">
+                    删除
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    <div x-show="total > pageSize" style="padding:0.85rem 1.1rem;border-top:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;">
+      <span style="font-size:12.5px;color:#94a3b8;"
+            x-text="'第 '+((page-1)*pageSize+1)+'–'+Math.min(page*pageSize,total)+' 条，共 '+total+' 条'"></span>
+      <div style="display:flex;gap:6px;">
+        <button type="button" class="button is-small" @click="page--;load()" :disabled="page<=1"
+                style="font-size:12.5px;">← 上一页</button>
+        <button type="button" class="button is-small" @click="page++;load()" :disabled="page*pageSize>=total"
+                style="font-size:12.5px;">下一页 →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ Create Modal ══════════════════════════════════════════ -->
+  <div class="modal" :class="showCreate?'is-active':''">
+    <div class="modal-background" @click="showCreate=false"></div>
+    <div class="modal-card" style="border-radius:14px;overflow:hidden;max-width:460px;width:calc(100% - 2rem);">
+      <header class="modal-card-head" style="background:#fff;border-bottom:1px solid #f1f5f9;padding:1.15rem 1.5rem;">
+        <p class="modal-card-title" style="font-size:16px;font-weight:700;color:#0f172a;">新建用户</p>
+        <button class="delete" @click="showCreate=false" aria-label="关闭"></button>
+      </header>
+      <section class="modal-card-body" style="background:#fff;padding:1.35rem 1.5rem;">
+        <div class="field">
+          <label class="label" style="font-size:13px;font-weight:600;">用户名 <span style="color:#ef4444;">*</span></label>
+          <div class="control"><input class="input" type="text" x-model="form.username" placeholder="username" autocomplete="off" /></div>
+        </div>
+        <div class="field">
+          <label class="label" style="font-size:13px;font-weight:600;">邮箱 <span style="color:#ef4444;">*</span></label>
+          <div class="control"><input class="input" type="email" x-model="form.email" placeholder="user@example.com" /></div>
+        </div>
+        <div class="field">
+          <label class="label" style="font-size:13px;font-weight:600;">初始密码 <span style="color:#ef4444;">*</span></label>
+          <div class="control"><input class="input" type="text" x-model="form.password" placeholder="至少 6 位" /></div>
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label class="label" style="font-size:13px;font-weight:600;">角色</label>
+          <div class="control">
+            <div class="select is-fullwidth">
+              <select x-model="form.role">
+                <option value="user">普通用户</option>
+                <option value="admin">管理员</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <template x-if="formError">
+          <div class="notification is-danger is-light is-compact" style="margin-top:1rem;border-radius:8px;" x-text="formError"></div>
+        </template>
+      </section>
+      <footer class="modal-card-foot" style="background:#f8fafc;border-top:1px solid #f1f5f9;padding:1rem 1.5rem;display:flex;justify-content:flex-end;gap:0.5rem;">
+        <button type="button" class="button" @click="showCreate=false">取消</button>
+        <button type="button" class="button is-primary"
+                :class="formLoading?'is-loading':''"
+                :disabled="formLoading||!form.username.trim()||!form.email.trim()||!form.password.trim()"
+                @click="createUser()"
+                style="font-weight:600;">
+          确认创建
+        </button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- ══ Edit Modal ════════════════════════════════════════════ -->
+  <div class="modal" :class="showEdit?'is-active':''">
+    <div class="modal-background" @click="showEdit=false"></div>
+    <div class="modal-card" style="border-radius:14px;overflow:hidden;max-width:460px;width:calc(100% - 2rem);">
+      <header class="modal-card-head" style="background:#fff;border-bottom:1px solid #f1f5f9;padding:1.15rem 1.5rem;">
+        <p class="modal-card-title" style="font-size:16px;font-weight:700;color:#0f172a;">
+          编辑用户&ensp;<span style="color:#111;" x-text="editTarget&&editTarget.username"></span>
+        </p>
+        <button class="delete" @click="showEdit=false" aria-label="关闭"></button>
+      </header>
+      <section class="modal-card-body" style="background:#fff;padding:1.35rem 1.5rem;">
+        <div class="field">
+          <label class="label" style="font-size:13px;font-weight:600;">邮箱</label>
+          <div class="control"><input class="input" type="email" x-model="editForm.email" /></div>
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label class="label" style="font-size:13px;font-weight:600;">角色</label>
+          <div class="control">
+            <div class="select is-fullwidth">
+              <select x-model="editForm.role">
+                <option value="user">普通用户</option>
+                <option value="admin">管理员</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <template x-if="formError">
+          <div class="notification is-danger is-light is-compact" style="margin-top:1rem;border-radius:8px;" x-text="formError"></div>
+        </template>
+      </section>
+      <footer class="modal-card-foot" style="background:#f8fafc;border-top:1px solid #f1f5f9;padding:1rem 1.5rem;display:flex;justify-content:flex-end;gap:0.5rem;">
+        <button type="button" class="button" @click="showEdit=false">取消</button>
+        <button type="button" class="button is-primary"
+                :class="formLoading?'is-loading':''"
+                :disabled="formLoading"
+                @click="saveEdit()"
+                style="font-weight:600;">
+          保存更改
+        </button>
+      </footer>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function userManager() {
+  return {
+    users: [], total: 0, page: 1, pageSize: 20, loading: false,
+    filters: { q: '', role: '' },
+    showCreate: false, showEdit: false,
+    form: { username: '', email: '', password: '', role: 'user' },
+    editForm: { email: '', role: 'user' }, editTarget: null,
+    formError: '', formLoading: false,
+
+    async init() { await this.load(); },
+
+    async load() {
+      this.loading = true;
+      const p = new URLSearchParams({ q: this.filters.q, role: this.filters.role, page: this.page, page_size: this.pageSize });
+      const data = await fetch('/api/admin/users?' + p).then(r => r.json());
+      this.users = data.users || []; this.total = data.total || 0;
+      this.loading = false;
+    },
+
+    openCreate() {
+      this.form = { username: '', email: '', password: '', role: 'user' };
+      this.formError = ''; this.showCreate = true;
+    },
+
+    async createUser() {
+      this.formLoading = true; this.formError = '';
+      const res = await fetch('/api/admin/users', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(this.form)
+      });
+      const data = await res.json();
+      if (!res.ok) { this.formError = data.detail || '创建失败'; }
+      else { this.showCreate = false; await this.load(); }
+      this.formLoading = false;
+    },
+
+    openEdit(u) {
+      this.editTarget = u;
+      this.editForm = { email: u.email, role: u.role };
+      this.formError = ''; this.showEdit = true;
+    },
+
+    async saveEdit() {
+      this.formLoading = true; this.formError = '';
+      const res = await fetch('/api/admin/users/' + this.editTarget.id, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(this.editForm)
+      });
+      const data = await res.json();
+      if (!res.ok) { this.formError = data.detail || '保存失败'; }
+      else { this.showEdit = false; await this.load(); }
+      this.formLoading = false;
+    },
+
+    async toggleActive(u) {
+      await fetch('/api/admin/users/' + u.id, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_active: !u.is_active })
+      });
+      await this.load();
+    },
+
+    async resetPassword(u) {
+      const newPwd = prompt(`为用户「${u.username}」设置新密码：`);
+      if (!newPwd || !newPwd.trim()) return;
+      const res = await fetch('/api/admin/users/' + u.id, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ new_password: newPwd })
+      });
+      if (res.ok) alert(`「${u.username}」的密码已重置`);
+      else alert('密码重置失败，请重试');
+    },
+
+    async deleteUser(u) {
+      if (!confirm(`确认删除用户「${u.username}」？\n此操作将删除该用户的所有数据且不可恢复。`)) return;
+      const res = await fetch('/api/admin/users/' + u.id, { method: 'DELETE' });
+      if (res.ok) await this.load();
+      else alert('删除失败，请刷新后重试');
+    }
+  };
+}
+</script>
+{% endblock %}
